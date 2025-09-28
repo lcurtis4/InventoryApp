@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YGO Scanner (v5)</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>YGO Scanner</h1>
+  <div class="muted">Hold a card steady; after ~3s I'll auto-scan the title band</div>
+
+  <div class="layout">
+    <!-- LEFT: Camera panel -->
+    <div class="left-col">
+      <div class="panel">
+        <div class="controls">
+          <button id="startBtn" class="primary">Start Camera</button>
+          <button id="scanToggleBtn" class="secondary" style="display:none;" aria-pressed="false">Pause Scanning</button>
+          <span id="autoStatus" class="muted"></span>
+        </div>
+
+        <div class="camwrap">
+          <video id="video" autoplay playsinline></video>
+          <canvas id="overlay"></canvas>
+        </div>
+        <canvas id="workCanvas" style="display:none;"></canvas>
+        <div id="camStatus" class="status"></div>
+
+        <!-- Debug: always visible -->
+        <div class="debug-section">
+          <label class="muted">Debug preview (last crop)</label>
+          <canvas id="debugCanvas" class="debug-canvas"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Unified form -->
+    <div class="right-col">
+      <div class="formcard">
+        <!-- Card Name -->
+        <div class="group">
+          <h2>Card Name</h2>
+          <label>Scanned Name (read-only)</label>
+          <input id="ocrName" type="text" placeholder="Blue-Eyes White Dragon" readonly aria-readonly="true">
+          <div class="inline">
+            <span id="ocrConf" class="muted">accuracy: —</span>
+            <span id="ocrStatus" class="status"></span>
+          </div>
+
+          <label>Manual Name (optional override)</label>
+          <input id="manualName" type="text" placeholder="Type exact card name here if you prefer">
+          <div class="muted">Lookup uses <strong>Manual Name</strong> if provided, else the <strong>Scanned Name</strong>.</div>
+        </div>
+
+        <!-- Lookup & Rarity -->
+        <div class="group">
+          <h2>Lookup & Rarity</h2>
+          <div class="row">
+            <button id="lookupBtn" class="primary">Find Printings</button>
+            <div id="lookupStatus" class="status grow"></div>
+          </div>
+
+          <div class="row two-col">
+            <div class="col">
+              <label>Set:</label>
+              <select id="setSelect"></select>
+              <br>
+              <label>Rarity:</label>
+              <select id="raritySelect"></select>
+            </div>
+
+            <div class="col">
+              <label>Quantity:</label>
+              <input id="qty" type="number" min="1" step="1" placeholder="1" disabled>
+              <br>
+              <label>Condition:</label>
+              <select id="conditionSelect">
+                <option value="">please select</option>
+                <option value="NM">NM</option>
+                <option value="LP">LP</option>
+                <option value="MP">MP</option>
+                <option value="HP">HP</option>
+                <option value="D">D</option>
+              </select>
+              <div id="confirmStatus" class="status"></div>
+            </div>
+          </div>
+
+          <!-- Confirm/Add -->
+          <div class="row">
+            <button id="confirmBtn" class="secondary" disabled>Post to Sheet</button>
+            <div id="confirmPickStatus" class="status grow"></div>
+          </div>
+        </div>
+
+        <!-- Recent Items -->
+        <div class="group">
+          <h2>Recent Items</h2>
+          <div class="tablewrap">
+            <table id="grid">
+              <thead>
+                <tr>
+                  <th>Name</th><th>Set</th><th>Code</th><th>Rarity</th><th>Condition</th><th>Qty</th><th>Sent?</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="muted">Preview only — Google Sheet is the source of truth.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Success Modal -->
+  <div id="successModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal__backdrop"></div>
+    <div class="modal__dialog" role="document" tabindex="-1">
+      <div class="modal__header">
+        <h3 class="modal__title">Added to Sheet</h3>
+        <button class="modal__close" aria-label="Close">×</button>
+      </div>
+      <div class="modal__body" id="successModalBody"></div>
+      <div class="modal__footer">
+        <button class="modal__ok primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tesseract must load before ocr.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
+
+  <!-- Scanner modules -->
+  <script defer src="js/scanner/constants.js"></script>
+  <script defer src="js/scanner/geometry.js"></script>
+  <script defer src="js/scanner/preprocess.js"></script>
+  <script defer src="js/scanner/bandDetect.js"></script>
+  <script defer src="js/scanner/ocr.js"></script>
+  <script defer src="js/scanner/overlay.js"></script>
+  <script defer src="js/scanner/camera.js"></script>
+  <script defer src="js/scanner/core.js"></script>
+
+  <!-- Lookup modules -->
+  <script defer src="js/lookup/normalize.js"></script>
+  <script defer src="js/lookup/models.js"></script>
+  <script defer src="js/lookup/api.js"></script>
+  <script defer src="js/lookup/resolve.js"></script>
+  <script defer src="js/lookup/ui.js"></script>
+
+  <!-- UI helpers -->
+  <script defer src="js/ui/autocomplete.js"></script>
+  <script defer src="js/ui/dom.js"></script>
+  <script defer src="js/ui/state.js"></script>
+  <script defer src="js/ui/names.js"></script>
+  <script defer src="js/ui/modal.js"></script>
+  <script defer src="js/ui/lookup.js"></script>
+  <script defer src="js/ui/scan.js"></script>
+  <script defer src="js/ui/confirm.js"></script>
+  <script defer src="js/ui/index.js"></script>
+
+  <!-- Config must load BEFORE sheetsClient.js -->
+  <script defer src="config.js"></script>
+
+  <!-- Integrations -->
+  <script defer src="js/integrations/sheetsClient.js"></script>
+</body>
+</html>
