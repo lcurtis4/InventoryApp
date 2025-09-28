@@ -2,61 +2,114 @@
 (function () {
   'use strict';
 
-  // Ensure namespaces
   window.LookupParts = window.LookupParts || {};
   window.Lookup = window.Lookup || {};
 
-  /* -------------------------------------------------------
-   * Normalization + similarity helpers
-   * ----------------------------------------------------- */
-  function norm(s) {
-    if (!s) return "";
-    let t = String(s);
-    t = t.replace(/[“”"‘’`]/g, "");
-    t = t.replace(/[★]/g, "☆").replace(/[・]/g, "·");
-    t = t
-      .replace(/[^\w\s\-\:\&\!\?\,\.☆・·]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase();
-    t = t.replace(/\s*-\s*/g, "-");
-    t = t.replace(/[·]{2,}/g, "·");
+  // --- tiny cache by query ---
+  const _cache = new Map();
+  function getCached(q) { return _cache.get(q) || null; }
+  function setCached(q, v) { _cache.set(q, v); }
+
+  // --- normalization helpers (reusing normalize.js if present) ---
+  const N = window.LookupParts.normalize || window.Lookup.normalize || {};
+  const norm = (s) => (typeof N.norm === "function" ? N.norm(s) : String(s || "").trim().toLowerCase());
+  const sim  = (a,b) => (typeof N.sim  === "function" ? N.sim(a,b) : (String(a).toLowerCase() === String(b).toLowerCase() ? 1 : 0));
+
+  function hasMinLen3(s){ return (String(s||"").trim().length >= 3); }
+
+  // Extra-hard sanitizer for API (strip diacritics & odd chars)
+  function sanitizeForApi(s) {
+    let t = String(s || "");
+    // remove diacritics
+    try { t = t.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); } catch {}
+    // keep letters, digits, space and hyphen
+    t = t.replace(/[^A-Za-z0-9 \-]/g, " ");
+    t = t.replace(/\s+/g, " ").trim();
     return t;
   }
 
-  function hasMinLen3(raw) {
-    if (!raw) return false;
-    const cleaned = norm(raw).replace(/[^a-z0-9]/g, "");
-    return cleaned.length >= 3;
+  function toGoodBase(s){
+    const base = norm(s);
+    // build API-friendly version from original string (not already lowered)
+    const safe = sanitizeForApi(s);
+    // fall back to normalized if sanitize nuked too much
+    return (safe && safe.length) ? safe.toLowerCase() : base;
   }
 
-  // ... [unchanged helper functions above] ...
+  async function fetchJson(url, { timeoutMs = 5000 } = {}) {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { signal: ctrl.signal });
+      if (!res.ok) {
+        // Treat YGOPRODeck 400s as “no results” (they happen on edge queries)
+        if (res.status === 400) {
+          try { await res.text(); } catch {}
+          return { data: [] };
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
+      return await res.json();
+    } finally { clearTimeout(to); }
+  }
 
-  /* -------------------------------------------------------
-   * Candidate search (fname)
-   * ----------------------------------------------------- */
+  // Build a small index by normalized name so we can get sets quickly later
+  const _byName = new Map();
+  function indexByName(cards) {
+    for (const c of (cards || [])) {
+      const key = norm(c?.name || "");
+      if (!key) continue;
+      _byName.set(key, c);
+    }
+  }
+
+  function strongestChunks(name) {
+    const t = sanitizeForApi(name).split(/\s+/).filter(Boolean); // use sanitized tokens
+    // Prefer 2–3 word chunks if available, else singles
+    const chunks = [];
+    for (let k = Math.min(3, t.length); k >= 1; k--) {
+      for (let i = 0; i + k <= t.length; i++) {
+        chunks.push(t.slice(i, i + k).join(" "));
+      }
+      if (chunks.length) break;
+    }
+    return chunks.map(toGoodBase).filter(hasMinLen3);
+  }
+
+  function buildSetsAndRaritiesFromCard(card) {
+    const sets = Array.isArray(card?.sets) ? card.sets : [];
+    const raritiesMap = {};
+    for (const p of sets) {
+      const sn = p?.set_name || "";
+      const r  = p?.set_rarity || "";
+      if (!sn || !r) continue;
+      if (!raritiesMap[sn]) raritiesMap[sn] = new Set();
+      raritiesMap[sn].add(r);
+    }
+    Object.keys(raritiesMap).forEach(k => { raritiesMap[k] = Array.from(raritiesMap[k]); });
+    return { sets, raritiesMap };
+  }
+
+  /** Return array: [{ id, name, sets:[{set_name,set_rarity,...}] }, ...] */
   async function fetchCandidates(raw) {
     const q = toGoodBase(raw);
     if (!q || !hasMinLen3(q)) return [];
-
-    console.log("[API Lookup] fetchCandidates fname:", q);
+    const url = "https://db.ygoprodeck.com/api/v7/cardinfo.php?misc=yes&fname=" + encodeURIComponent(q);
+    console.log("[API Lookup] fetchCandidates →", url);
 
     const cached = getCached(q);
     if (cached) return cached;
 
-    const url = "https://db.ygoprodeck.com/api/v7/cardinfo.php?misc=yes&fname=" + encodeURIComponent(q);
     const data = await fetchJson(url, { timeoutMs: 3000 });
-
     const list = Array.isArray(data?.data) ? data.data : [];
     const out = list.map(c => ({ id: c.id, name: c.name, sets: c.card_sets || [] }));
+
     indexByName(out);
     setCached(q, out);
     return out;
   }
 
-  /* -------------------------------------------------------
-   * Sets & rarities helpers
-   * ----------------------------------------------------- */
+  /** Given a canonical card name, get its sets and a map of rarities per set */
   async function fetchCardSetsAndRarities(cardName) {
     const key = (cardName || "").toLowerCase();
     if (!key) return { sets: [], raritiesMap: {} };
@@ -64,34 +117,20 @@
     console.log("[API Lookup] fetchCardSetsAndRarities name:", cardName);
 
     const hit = _byName.get(key);
-    if (hit) return buildSetsAndRaritiesFromCard(hit);
-
-    const variants = nameVariants(cardName);
-    for (const v of variants) {
-      console.log("[API Lookup] trying variant:", v);
-
-      const data = await fetchJson(
-        "https://db.ygoprodeck.com/api/v7/cardinfo.php?misc=yes&name=" + encodeURIComponent(v),
-        { timeoutMs: 3000 }
-      );
-      const card = Array.isArray(data?.data) ? data.data[0] : null;
-      if (card && Array.isArray(card.card_sets) && card.card_sets.length) {
-        const slim = { id: card.id, name: card.name, sets: card.card_sets };
-        indexByName([slim]);
-        return buildSetsAndRaritiesFromCard(slim);
-      }
+    if (hit && Array.isArray(hit.sets) && hit.sets.length) {
+      return buildSetsAndRaritiesFromCard(hit);
     }
 
+    // Fallback: try strongest chunks against fname
     for (const q of strongestChunks(cardName)) {
-      console.log("[API Lookup] fallback fname chunk:", q);
+      const url = "https://db.ygoprodeck.com/api/v7/cardinfo.php?misc=yes&fname=" + encodeURIComponent(q);
+      console.log("[API Lookup] fallback fname →", url);
 
-      const data = await fetchJson(
-        "https://db.ygoprodeck.com/api/v7/cardinfo.php?misc=yes&fname=" + encodeURIComponent(q),
-        { timeoutMs: 3000 }
-      );
+      const data = await fetchJson(url, { timeoutMs: 3000 });
       const list = Array.isArray(data?.data) ? data.data : [];
       if (!list.length) continue;
 
+      // Choose the best by similarity
       let best = null, bestScore = -Infinity;
       for (const c of list) {
         const score = sim(cardName, c?.name || "");
@@ -107,67 +146,54 @@
     return { sets: [], raritiesMap: {} };
   }
 
-  /* -------------------------------------------------------
-   * Full details fetch
-   * ----------------------------------------------------- */
-  async function fetchCardDetails({ id, name } = {}) {
-    const base = "https://db.ygoprodeck.com/api/v7/cardinfo.php?misc=yes";
-    let urls = [];
-    if (id) urls.push(base + "&id=" + encodeURIComponent(String(id)));
-    const safeName = (name || "").trim();
-    if (!id && safeName) {
-      console.log("[API Lookup] fetchCardDetails by name:", safeName);
+  // ---- Name resolver used by UI (fallback for manual or noisy OCR) ----------
+  // Returns a canonical DB name (string) or "" if not confident.
+  async function resolveNameFromScanNgrams(raw, { minScore = 0.65 } = {}) {
+    const base = toGoodBase(raw);
+    if (!base || base.length < 3) return "";
 
-      urls.push(base + "&name=" + encodeURIComponent(safeName));
-      urls.push(base + "&fname=" + encodeURIComponent(safeName));
+    // Try full text first, then strongest chunks
+    const lists = [];
+    try { lists.push(await fetchCandidates(base)); } catch (_) {}
+    for (const ch of strongestChunks(base)) {
+      try { lists.push(await fetchCandidates(ch)); } catch (_) {}
     }
 
-    for (const url of urls) {
-      const data = await fetchJson(url, { timeoutMs: 4000 });
-      const card = Array.isArray(data?.data) ? data.data[0] : null;
-      if (!card) continue;
-
-      return {
-        id: card.id,
-        name: card.name,
-        type: card.type,
-        desc: card.desc,
-        race: card.race,
-        archetype: card.archetype,
-        atk: card.atk,
-        def: card.def,
-        level: card.level,
-        linkval: card.linkval,
-        scale: card.scale,
-        card_sets: Array.isArray(card.card_sets) ? card.card_sets : [],
-        card_images: Array.isArray(card.card_images) ? card.card_images : [],
-        card_prices: Array.isArray(card.card_prices) ? card.card_prices : [],
-        banlist_info: card.banlist_info || null,
-        misc_info: card.misc_info || null
-      };
+    let best = null, bestScore = -Infinity;
+    for (const list of lists) {
+      for (const c of (list || [])) {
+        const n = c?.name || "";
+        if (!n) continue;
+        const s = sim(raw, n);               // 0..1 similarity
+        if (s > bestScore) { bestScore = s; best = c; }
+      }
     }
-    return null;
+
+    return (best && bestScore >= minScore) ? (best.name || "") : "";
   }
 
-  /* -------------------------------------------------------
-   * Public API surface
-   * ----------------------------------------------------- */
-  const bestNameMatch =
-    (window.Lookup && window.Lookup.normalize && window.Lookup.normalize.bestNameMatch)
-      ? window.Lookup.normalize.bestNameMatch
-      : function () { return 0; };
+  // Expose for both old/global callers and the namespaced UI
+  window.resolveNameFromScanNgrams = resolveNameFromScanNgrams;
+
+  function bestNameMatch(query, candidates) {
+    if (typeof N.bestNameMatch === "function") return N.bestNameMatch(query, candidates);
+    const q = (query || ""); if (!q) return 0;
+    let best = 0, bestScore = -Infinity;
+    for (let i = 0; i < (candidates || []).length; i++) {
+      const nm = candidates[i]?.name || "";
+      const s = sim(q, nm);
+      if (s > bestScore) { bestScore = s; best = i; }
+    }
+    return best;
+  }
 
   const api = {
-    fetchCardDetails,
     fetchCandidates,
-    resolveNameFromScanNgrams,
     fetchCardSetsAndRarities,
     bestNameMatch,
+    resolveNameFromScanNgrams,
   };
 
   Object.assign(window.Lookup, api);
-  window.Lookup.api = api;
   window.LookupParts.api = api;
-
-  window.lookup = window.Lookup;
 })();

@@ -2,7 +2,6 @@
 (function () {
   'use strict';
 
-  // Ensure namespaces exist
   window.LookupParts = window.LookupParts || {};
   window.Lookup = window.Lookup || {};
 
@@ -11,30 +10,27 @@
     if (!s) return "";
     let t = String(s);
 
-    // 1) Remove straight & curly quotes entirely so OCR like `"Ripper"` ≈ Ripper
+    // Remove quotes and unify some symbols commonly misread by OCR
     t = t.replace(/[“”"‘’`]/g, "");
+    t = t.replace(/[★]/g, "☆").replace(/[・]/g, "·");
 
-    // 2) Unify common separators (dots/bullets/underscores/pipes) into a dash
-    t = t.replace(/[|_•·]/g, "-");
-
-    // 3) Drop exotic punctuation; keep word chars, space, dash, &, !, ?, :, , and .
+    // Keep safe chars: letters, digits, space, hyphen and a few punctuation marks
     t = t.replace(/[^\w\s\-\&\!\?:,\.]/g, " ");
 
-    // 4) Squash whitespace and lowercase
-    t = t.replace(/\s+/g, " ").trim().toLowerCase();
-
-    // 5) Normalize spaced hyphens
+    // Collapse spaces and normalize spaced hyphens
+    t = t.replace(/\s+/g, " ").trim();
     t = t.replace(/\s*-\s*/g, "-");
 
-    return t;
+    // Lower for similarity functions
+    return t.toLowerCase();
   }
 
-  /** Levenshtein similarity 0..1 */
+  /** Levenshtein similarity in 0..1 */
   function levPct(a, b) {
     a = norm(a); b = norm(b);
     if (!a || !b) return 0;
     const m = a.length, n = b.length;
-    const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+    const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
     for (let i = 0; i <= m; i++) dp[i][0] = i;
     for (let j = 0; j <= n; j++) dp[0][j] = j;
     for (let i = 1; i <= m; i++) {
@@ -49,10 +45,10 @@
 
   /** Jaro–Winkler similarity 0..1 */
   function jwPct(s1, s2) {
-    const M = Math;
     s1 = norm(s1); s2 = norm(s2);
     if (!s1 || !s2) return 0;
 
+    const M = Math;
     const matchDist = M.floor(M.max(s1.length, s2.length) / 2) - 1;
     const aM = new Array(s1.length), bM = new Array(s2.length);
     let matches = 0, trans = 0;
@@ -63,8 +59,7 @@
         if (bM[k]) continue;
         if (s1[i] !== s2[k]) continue;
         aM[i] = bM[k] = true;
-        matches++;
-        break;
+        matches++; break;
       }
     }
     if (matches === 0) return 0;
@@ -76,25 +71,19 @@
       if (s1[i] !== s2[k]) trans++;
       k++;
     }
-
-    const jaro = ((matches / s1.length) + (matches / s2.length) + ((matches - trans / 2) / matches)) / 3;
-    let prefix = 0;
-    for (let i = 0; i < M.min(4, s1.length, s2.length); i++) {
-      if (s1[i] === s2[i]) prefix++; else break;
-    }
-    return jaro + prefix * 0.1 * (1 - jaro);
+    const j = ((matches / s1.length) + (matches / s2.length) + ((matches - trans / 2) / matches)) / 3;
+    const prefixMax = 4;
+    let prefix = 0; for (let i = 0; i < Math.min(prefixMax, s1.length, s2.length); i++) { if (s1[i] === s2[i]) prefix++; else break; }
+    return j + prefix * 0.1 * (1 - j);
   }
 
-  /** Combined similarity 0..1 */
-  function sim(a, b) {
-    return Math.max(levPct(a, b), jwPct(a, b));
-  }
+  /** Hybrid similarity 0..1 */
+  function sim(a, b) { return Math.max(levPct(a, b), jwPct(a, b)); }
 
   /** Choose the best candidate index from an array of objects with `.name` */
   function bestNameMatch(query, candidates) {
     const q = (query || "");
     if (!q || !Array.isArray(candidates) || !candidates.length) return 0;
-
     let bestIdx = 0, bestScore = -Infinity;
     const nq = norm(q);
     candidates.forEach((c, i) => {
@@ -106,8 +95,7 @@
     return bestIdx;
   }
 
-  // Expose
   const normalize = { norm, levPct, jwPct, sim, bestNameMatch };
-  window.LookupParts.normalize = normalize;     // module-style
-  window.Lookup.normalize = normalize;          // legacy access
+  window.LookupParts.normalize = normalize;
+  window.Lookup.normalize = normalize;
 })();

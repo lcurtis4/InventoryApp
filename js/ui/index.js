@@ -21,8 +21,5 @@
     // Bind scanner (camera + OCR flow)
     safe(() => window.UI?.scan?.bind?.(), "scan.bind");
 
-    // ⚠️ Do not manually bind confirm here.
-    // js/ui/confirm.js self-attaches to #confirmBtn and related IDs.
-    console.log("[init] UI boot complete");
   });
 })();
