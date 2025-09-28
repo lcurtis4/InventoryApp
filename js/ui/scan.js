@@ -111,7 +111,9 @@
             if (typeof window.Lookup?.resolveNameFromScanNgrams === "function") {
               canonical = await window.Lookup.resolveNameFromScanNgrams(scannedText);
             } else {
-              canonical = scannedText;
+              // Resolver not loaded or disabled → don’t lock on raw OCR
+              canonical = "";
+              console.debug("[scan] resolver unavailable, skipping lock");
             }
 
             if (canonical) {

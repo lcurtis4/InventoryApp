@@ -87,5 +87,9 @@
 
   // Expose
   window.LookupParts.resolve = resolve;
-  window.Lookup.resolve = resolve; // legacy
+
+  // Flatten so callers can use window.Lookup.resolveNameFromScanNgrams directly
+  window.Lookup.resolveNameFromScanNgrams = resolveNameFromScanNgrams;
+  window.Lookup.fetchCardSetsAndRarities = resolve.fetchCardSetsAndRarities;
+  window.Lookup.bestNameMatch = resolve.bestNameMatch;
 })();

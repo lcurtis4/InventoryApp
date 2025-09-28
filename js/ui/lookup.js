@@ -1,5 +1,7 @@
 // js/ui/lookup.js
 (function(){
+  'use strict';
+
   window.UI = window.UI || {};
   const $ = window.UI.$;
   const State = window.UI.State;
@@ -20,7 +22,7 @@
     const q = (name || "").trim();
     if (!q) return null;
     try{
-      const list = await Lookup.fetchCandidates(q);
+      const list = await window.Lookup.fetchCandidates(q);
       if (!Array.isArray(list) || !list.length) return null;
       const lower = q.toLowerCase();
       for (const c of list){
@@ -49,8 +51,8 @@
 
       try {
         // For MANUAL: accept fuzzy (≥65%) using resolver; lock to canonical name if confident.
-        if (chosen.source === "manual") {
-          const canonical = await Lookup.resolveNameFromScanNgrams(chosen.text); // returns "" if score < 0.65
+        if (chosen.source === "manual" && typeof window.Lookup?.resolveNameFromScanNgrams === "function") {
+          const canonical = await window.Lookup.resolveNameFromScanNgrams(chosen.text); // returns "" if not confident
           if (!canonical) {
             status($("lookupStatus"), "Couldn’t confidently match that name (≥65%). Refine or pick from suggestions.", true);
             return;
@@ -61,14 +63,14 @@
         }
 
         // Fetch candidates (cached) and pick the best/locked one
-        const candidates = await Lookup.fetchCandidates(chosen.text);
+        const candidates = await window.Lookup.fetchCandidates(chosen.text);
         if (!candidates.length) { status($("lookupStatus"), "No matches found.", true); return; }
 
         // Prefer exact candidate if our text is canonical now; otherwise best match
         const lower = chosen.text.toLowerCase();
         let pick = candidates.find(c => (c?.name || "").toLowerCase() === lower);
-        if (!pick) {
-          const idx = Lookup.bestNameMatch(chosen.text, candidates);
+        if (!pick && typeof window.Lookup?.bestNameMatch === "function") {
+          const idx = window.Lookup.bestNameMatch(chosen.text, candidates);
           pick = (idx >= 0) ? candidates[idx] : null;
         }
         if (!pick) { status($("lookupStatus"), "No confident match.", true); return; }
