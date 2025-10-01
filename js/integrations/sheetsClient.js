@@ -1,93 +1,56 @@
-// js/integrations/sheetsClient.js
+// js/integrations/sheetsClient.js — vSC-6
+// POST row -> Apps Script doPost(e), read JSON response for debugging
+
 (function () {
   const cfg = window.APP_CONFIG || {};
 
-  // Accept several config keys you've used in past versions
-  const BASE_RAW =
-    (cfg.SHEETS_DEPLOYMENT || cfg.SHEETS_SCRIPT_URL || cfg.SCRIPT_URL || "").trim();
-
+  // Accept multiple config keys you've used before
+  const RAW_URL = String(
+    cfg.SHEETS_SCRIPT_URL || cfg.SHEETS_DEPLOYMENT || cfg.SCRIPT_URL || ""
+  ).trim();
   const SECRET = String(cfg.SECRET || "0104200206121997").trim();
 
   function ensureExecUrl(u) {
-    // Allow full exec URL or the base deployment URL
-    // Examples supported:
-    //  - https://script.google.com/macros/s/AKfycbx.../exec
-    //  - https://script.google.com/macros/s/AKfycbx...  (we'll append /exec)
     if (!u) return "";
-    const url = String(u);
-    return /\/exec(\?|$)/.test(url) ? url : url.replace(/\/+$/, "") + "/exec";
+    return /\/exec(\?|$)/.test(u) ? u : u.replace(/\/+$/, "") + "/exec";
   }
-
-  const BASE_URL = ensureExecUrl(BASE_RAW);
+  const URL = ensureExecUrl(RAW_URL);
 
   function assertConfig() {
-    if (!BASE_URL) {
-      throw new Error(
-        "[sheetsClient] Missing APP_CONFIG.SHEETS_DEPLOYMENT (or SHEETS_SCRIPT_URL/SCRIPT_URL)."
-      );
-    }
-    if (!SECRET) {
-      console.warn("[sheetsClient] Missing APP_CONFIG.SECRET; using default.");
-    }
+    if (!URL) throw new Error("APP_CONFIG.SHEETS_SCRIPT_URL is missing");
+    if (!SECRET) throw new Error("APP_CONFIG.SECRET is missing");
   }
 
-  function buildGetUrl(base, payload) {
-    const url = new URL(base);
-    url.searchParams.set("key", SECRET);
-    Object.entries(payload || {}).forEach(([k, v]) => {
-      url.searchParams.set(k, v == null ? "" : String(v));
-    });
-    return url.toString();
+  window.Sheet = (function () {
+  const cfg = window.APP_CONFIG || {};
+  const URL = (cfg.SHEETS_SCRIPT_URL || cfg.SHEETS_DEPLOYMENT || cfg.SCRIPT_URL || "").replace(/\/+$/, "") + "/exec";
+  const KEY = String(cfg.SECRET || "");
+
+  function assertCfg() {
+    if (!URL) throw new Error("APP_CONFIG.SHEETS_SCRIPT_URL is missing");
+    if (!KEY) throw new Error("APP_CONFIG.SECRET is missing");
   }
 
-  /**
-   * Send a row to the Google Apps Script endpoint.
-   * FIRE-AND-FORGET with `mode:'no-cors'` so the browser never rejects on CORS.
-   * We don't read/parse the response at all.
-   */
   async function sendToSheet(row) {
-    assertConfig();
+    assertCfg();
+    const postUrl = `${URL}?key=${encodeURIComponent(KEY)}`;
 
-    const payload = row || {};
-    const postUrl = `${BASE_URL}?key=${encodeURIComponent(SECRET)}`;
-
-    // Try SIMPLE POST first — with no-cors to avoid CORS rejections.
+    // IMPORTANT: no headers -> simple request -> no preflight
     try {
-      console.log("[sheetsClient] POSTing payload (no-cors):", payload);
       await fetch(postUrl, {
         method: "POST",
-        mode: "no-cors",                     // <— key change
-        headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify(payload),
+        mode: "no-cors",
+        body: JSON.stringify(row) // text/plain by default; Apps Script parses e.postData.contents
       });
-      // We can't read status/body in no-cors mode; assume success.
-      return { status: "OK", transport: "POST" };
+      // Response will be opaque by design; rely on the Sheet as source of truth
     } catch (err) {
-      console.warn("[sheetsClient] POST threw, falling back to GET:", err);
-    }
-
-    // Fallback: GET, also no-cors to prevent rejection.
-    try {
-      const getUrl = buildGetUrl(BASE_URL, payload);
-      if (getUrl.length > 1800) {
-        console.warn(
-          "[sheetsClient] GET URL is long (",
-          getUrl.length,
-          "chars). Consider trimming payload."
-        );
-      }
-      console.log("[sheetsClient] Sending row (GET no-cors):", payload);
-      await fetch(getUrl, { method: "GET", mode: "no-cors" }); // <— no-cors
-      return { status: "OK", transport: "GET" };
-    } catch (err2) {
-      console.error("[sheetsClient] Both POST and GET failed:", err2);
-      return { status: "FAILED", error: err2?.message || String(err2) };
+      console.error("[sheetsClient] sendToSheet failed:", err);
     }
   }
 
-  // Public API
-  window.Sheet = {
-    sendToSheet,
-    sendRow: sendToSheet, // keep backward compatibility
-  };
+  return { sendToSheet };
+})();
+
+
+  window.Sheet = { sendToSheet };
 })();

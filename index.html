@@ -164,6 +164,13 @@
   <script defer src="js/lookup/resolve.js"></script>
   <script defer src="js/lookup/ui.js"></script>
 
+  <!-- Config must load BEFORE sheetsClient.js -->
+  <script defer src="config.js"></script>
+    
+  <!-- Integrations -->
+  <script defer src="js/integrations/sheetsClient.js"></script>
+  
+
   <!-- UI helpers -->
   <script defer src="js/ui/autocomplete.js"></script>
   <script defer src="js/ui/dom.js"></script>
@@ -175,10 +182,5 @@
   <script defer src="js/ui/confirm.js"></script>
   <script defer src="js/ui/index.js"></script>
 
-  <!-- Config must load BEFORE sheetsClient.js -->
-  <script defer src="config.js"></script>
-
-  <!-- Integrations -->
-  <script defer src="js/integrations/sheetsClient.js"></script>
 </body>
 </html>

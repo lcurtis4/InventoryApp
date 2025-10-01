@@ -1,4 +1,4 @@
-// js/ui/confirm.js  (BRANCH)
+// js/ui/confirm.js (BRANCH) — vCONF-5
 // Confirm -> build row -> send via window.Sheet.sendToSheet(row)
 
 (function () {
@@ -14,8 +14,8 @@
   const confirmStatus = $("#confirmPickStatus") || $("#confirmStatus");
 
   // Access shared UI state (set by ui/lookup.js)
-  const UI = window.UI || {};
-  const State = UI.State || {};
+  const UI = (window.UI = window.UI || {});
+  const State = (UI.State = UI.State || {});
 
   // Code Confirm modal (branch)
   const codeModal = $("#codeConfirmModal");
@@ -31,24 +31,34 @@
   // Recent grid
   const gridBody = document.querySelector("#grid tbody");
 
+  // --- SAFE select helpers ---
+  function getSelectedOption(selectEl) {
+    if (!selectEl || !selectEl.options) return null;
+    const idx = typeof selectEl.selectedIndex === "number" ? selectEl.selectedIndex : -1;
+    if (idx < 0 || idx >= selectEl.options.length) return null;
+    return selectEl.options[idx] || null;
+  }
   function getSelectedText(selectEl) {
-    const opt = selectEl && selectEl.options && selectEl.options[selectEl.selectedIndex];
-    return opt ? opt.textContent.trim() : "";
+    const opt = getSelectedOption(selectEl);
+    return opt?.textContent?.trim?.() ?? "";
   }
   function getSelectedValue(selectEl) {
-    const opt = selectEl && selectEl.options && selectEl.options[selectEl.selectedIndex];
-    return opt ? (opt.value ?? "").trim() : "";
+    const opt = getSelectedOption(selectEl);
+    return (opt?.value ?? "").toString().trim();
   }
+
   function extractCodeFromOption(optText) {
     // Fallback: "Legend of Blue Eyes (LOB-001)" -> "LOB-001"
     const m = optText && optText.match(/\(([A-Za-z0-9\-]+)\)\s*$/);
     return m ? m[1] : "";
   }
+
   function showStatus(msg, kind = "info") {
     if (!confirmStatus) return;
     confirmStatus.textContent = msg;
     confirmStatus.className = "status " + (kind === "error" ? "error" : kind === "ok" ? "ok" : "");
   }
+
   function openSuccessModal(messageHtml) {
     if (!successModal) return;
     successModalBody.innerHTML = messageHtml || "Added.";
@@ -77,18 +87,24 @@
     const name = (manualNameEl?.value || "").trim() || (ocrNameEl?.value || "").trim();
 
     // Pull selection from UI.State populated by ui/lookup.js
-    const setName   = State?.selectedSetName || getSelectedValue(setSel) || getSelectedText(setSel);
-    const rarity    = State?.selectedRarity  || getSelectedValue(raritySel) || getSelectedText(raritySel);
-    const printing  = State?.selectedPrinting || null;
+    const setName  = State?.selectedSetName || getSelectedValue(setSel) || getSelectedText(setSel);
+    const rarity   = State?.selectedRarity  || getSelectedValue(raritySel) || getSelectedText(raritySel);
+    const printing = State?.selectedPrinting || null;
 
     // ✅ Primary source for code (correct): from selected printing
     let code = printing?.set_code || "";
-
     // Fallback (older behavior): try to scrape from set option label
     if (!code) code = extractCodeFromOption(getSelectedText(setSel));
 
     const qty       = parseInt(qtyEl?.value || "1", 10) || 1;
     const condition = getSelectedValue(conditionSel) || getSelectedText(conditionSel);
+
+    // System name from config (preferred), else State, else "desktop"
+    const system =
+      (window.APP_CONFIG?.DEVICE_NAME ?? window.APP_CONFIG?.deviceName) ||
+      window.UI?.State?.deviceName ||
+      "desktop";
+    State.source = system; // publish for anyone else
 
     return {
       timestamp: new Date().toISOString(),
@@ -98,7 +114,7 @@
       rarity: rarity || "",
       condition: condition || "",
       qty,
-      source: "scanner v5 (branch confirm)",
+      source: system,
     };
   }
 
@@ -190,5 +206,5 @@
     }
   });
 
-  console.log("[confirm] branch confirm.js initialized");
+  console.log("[confirm] branch confirm.js initialized :: vCONF-5");
 })();

@@ -10,4 +10,5 @@ window.APP_CONFIG = {
   // Optional toggles
   AUTO_START_CAMERA: true,
   DEBUG_OPEN_DEFAULT: true
+
 };
