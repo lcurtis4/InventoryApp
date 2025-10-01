@@ -114,7 +114,7 @@
       rarity: rarity || "",
       condition: condition || "",
       qty,
-      source: system,
+      source: "Logan's Desktop",
     };
   }
 
