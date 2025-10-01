@@ -1,159 +1,190 @@
-/* js/ui/confirm.js (passthrough version)
- * - Click "Post to Sheet" => open confirm modal with code from UI.
- * - Confirm => re-click the same button and let the ORIGINAL handler run.
- * - Cancel/Close/ESC/Backdrop => close modal + reset form.
- */
+// js/ui/confirm.js  (BRANCH)
+// Wires the Confirm flow to the same downstream transport main uses: window.Sheet.sendToSheet(row)
 
 (function () {
-  // Ensure DOM is ready
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init, { once: true });
-  } else {
-    init();
+  // ---- Element helpers ----
+  const $ = (sel) => document.querySelector(sel);
+  const ocrNameEl = $("#ocrName");
+  const manualNameEl = $("#manualName");
+  const setSel = $("#setSelect");
+  const raritySel = $("#raritySelect");
+  const qtyEl = $("#qty");
+  const conditionSel = $("#conditionSelect");
+  const confirmBtn = $("#confirmBtn");
+  const confirmStatus = $("#confirmPickStatus") || $("#confirmStatus");
+
+  // Code Confirm modal (branch)
+  const codeModal = $("#codeConfirmModal");
+  const codeConfirmText = $("#codeConfirmText");
+  const codeConfirmCloseX = $("#codeConfirmCloseX");
+  const codeConfirmCancelBtn = $("#codeConfirmCancelBtn");
+  const codeConfirmConfirmBtn = $("#codeConfirmConfirmBtn");
+
+  // Success modal (already in index.html)
+  const successModal = $("#successModal");
+  const successModalBody = $("#successModalBody");
+
+  // Recent grid
+  const gridBody = document.querySelector("#grid tbody");
+
+  function getSelectedText(selectEl) {
+    const opt = selectEl && selectEl.options && selectEl.options[selectEl.selectedIndex];
+    return opt ? opt.textContent.trim() : "";
+  }
+  function getSelectedValue(selectEl) {
+    const opt = selectEl && selectEl.options && selectEl.options[selectEl.selectedIndex];
+    return opt ? (opt.value ?? "").trim() : "";
+  }
+  function extractCodeFromOption(optText) {
+    // Try to pull a code like "LOB-001" if option text looks like "Legend of Blue Eyes (LOB-001)".
+    const m = optText && optText.match(/\(([A-Za-z0-9\-]+)\)\s*$/);
+    return m ? m[1] : "";
+  }
+  function showStatus(msg, kind = "info") {
+    if (!confirmStatus) return;
+    confirmStatus.textContent = msg;
+    confirmStatus.className = "status " + (kind === "error" ? "error" : kind === "ok" ? "ok" : "");
+  }
+  function openSuccessModal(messageHtml) {
+    if (!successModal) return;
+    successModalBody.innerHTML = messageHtml || "Added.";
+    successModal.classList.remove("hidden");
+    successModal.setAttribute("aria-hidden", "false");
+    // close handlers (x and OK) are wired in modal.js normally, but add safety:
+    successModal.querySelector(".modal__close")?.addEventListener("click", () => closeSuccessModal());
+    successModal.querySelector(".modal__ok")?.addEventListener("click", () => closeSuccessModal());
+  }
+  function closeSuccessModal() {
+    successModal?.classList.add("hidden");
+    successModal?.setAttribute("aria-hidden", "true");
   }
 
-  function init() {
-    const $ = (sel, root = document) => root.querySelector(sel);
+  function openCodeConfirmModal(codePreview) {
+    if (!codeModal) return;
+    codeConfirmText.textContent = "Confirm Card Code: " + (codePreview || "(none)");
+    codeModal.classList.remove("hidden");
+    codeModal.setAttribute("aria-hidden", "false");
+  }
+  function closeCodeConfirmModal() {
+    codeModal?.classList.add("hidden");
+    codeModal?.setAttribute("aria-hidden", "true");
+  }
 
-    // Elements
-    const modal      = $('#codeConfirmModal');
-    const modalText  = $('#codeConfirmText');
-    const btnConfirm = $('#codeConfirmConfirmBtn');
-    const btnCancel  = $('#codeConfirmCancelBtn');
-    const btnCloseX  = $('#codeConfirmCloseX');
-    const backdrop   = modal ? modal.querySelector('.modal-backdrop') : null;
+  function buildRowFromUI() {
+    const name = (manualNameEl?.value || "").trim() || (ocrNameEl?.value || "").trim();
+    const setText = getSelectedText(setSel);
+    const rarity = getSelectedValue(raritySel) || getSelectedText(raritySel);
+    const qty = parseInt(qtyEl?.value || "1", 10) || 1;
+    const condition = getSelectedValue(conditionSel) || getSelectedText(conditionSel);
+    // Try to infer a set code from the Set option text if present in parentheses:
+    const code = extractCodeFromOption(setText);
 
-    // Primary target: #confirmBtn (your Post to Sheet button)
-    let postBtn = $('#confirmBtn');
-    if (!postBtn) {
-      console.warn('[confirm.js] Post button #confirmBtn not found.');
-      return;
-    }
-    // Make sure it doesn't submit a <form> prematurely
+    return {
+      timestamp: new Date().toISOString(),
+      name,
+      set: setText,
+      code,
+      rarity,
+      condition,
+      qty,
+      source: "scanner v5 (branch confirm)",
+    };
+  }
 
-    if (!modal) {
-      console.warn('[confirm.js] #codeConfirmModal not found; confirmation gate disabled.');
-      return;
-    }
+  function validateRow(row) {
+    if (!row.name) return "Please choose a card name (Manual or Scanned).";
+    if (!row.set) return "Please choose a Set.";
+    if (!row.rarity) return "Please choose a Rarity.";
+    if (!row.condition) return "Please choose a Condition.";
+    if (!row.qty || row.qty < 1) return "Quantity must be at least 1.";
+    return null;
+  }
 
-    // Show/Hide helpers (force display so CSS can't block it)
-    function showModal() {
-      modal.classList.remove('hidden');
-      modal.setAttribute('aria-hidden', 'false');
-      modal.style.display = 'block';
-    }
-    function hideModal() {
-      modal.classList.add('hidden');
-      modal.setAttribute('aria-hidden', 'true');
-      modal.style.display = 'none';
-    }
+  function appendToRecentGrid(row) {
+    if (!gridBody) return;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${row.name}</td>
+      <td>${row.set}</td>
+      <td>${row.code || ""}</td>
+      <td>${row.rarity}</td>
+      <td>${row.condition}</td>
+      <td>${row.qty}</td>
+      <td>yes</td>
+    `;
+    gridBody.prepend(tr);
+  }
 
-    // Read code from existing UI (no data building)
-    function readCodeForDisplay() {
-      // Prefer the UI badge if you render it
-      const badge = document.querySelector('[data-code-badge]');
-      if (badge && badge.textContent.trim()) return badge.textContent.trim();
+  function resetForm() {
+    // Keep OCR name; clear manual override and selections
+    if (manualNameEl) manualNameEl.value = "";
+    if (setSel) setSel.selectedIndex = 0;
+    if (raritySel) raritySel.selectedIndex = 0;
+    if (conditionSel) conditionSel.selectedIndex = 0;
+    if (qtyEl) qtyEl.value = "";
+    showStatus("Ready for next card.", "ok");
+  }
 
-      // Try printing select's selected option data attribute/text
-      const printingSel = $('#printingSelect');
-      const opt = printingSel ? printingSel.options[printingSel.selectedIndex] : null;
-      if (opt) {
-        const dataCode = opt.getAttribute('data-code') || opt.dataset?.code;
-        if (dataCode && dataCode.trim()) return dataCode.trim();
-        const txt = (opt.textContent || '').trim();
-        if (txt) return txt;
+  async function postCurrentSelection() {
+    try {
+      showStatus("Posting…");
+      const row = buildRowFromUI();
+      const err = validateRow(row);
+      if (err) {
+        showStatus(err, "error");
+        console.warn("[confirm] validation failed:", err, row);
+        return;
       }
 
-      return '(none)';
-    }
-
-    // Reset form to pristine (IDs match the HTML I gave you)
-    function resetForm() {
-      const manualName = $('#manualName');
-      const qty        = $('#qtyInput') || $('#qty');
-      const setSel     = $('#setSelect');
-      const printSel   = $('#printingSelect');
-      const notes      = $('#notes');
-      const codeBadge  = document.querySelector('[data-code-badge]');
-      const preview    = $('#preview');
-      const errorsBox  = $('#errors');
-      const results    = $('#resultsTable');
-
-      if (manualName) manualName.value = '';
-      if (qty)        qty.value = '1';
-      if (setSel)     setSel.selectedIndex = 0;
-      if (printSel)   printSel.selectedIndex = 0;
-      if (notes)      notes.value = '';
-      if (errorsBox)  errorsBox.textContent = '';
-      if (codeBadge)  codeBadge.textContent = '';
-      if (preview && preview.tagName === 'IMG') preview.src = '';
-      if (results) results.innerHTML = '';
-
-      if (typeof window?.UI?.recomputeGates === 'function') {
-        try { window.UI.recomputeGates(); } catch (_) {}
-      }
-    }
-
-    // Flag to allow the original handler to run on the forwarded click
-    let allowDirectPost = false;
-
-    // Intercept the first click to show modal
-    postBtn.addEventListener('click', (ev) => {
-      if (allowDirectPost) {
-        // Consume the flag and let other handlers proceed normally
-        allowDirectPost = false;
-        return; // Do NOT preventDefault; pass-through to original handler(s)
+      if (!window.Sheet || typeof window.Sheet.sendToSheet !== "function") {
+        console.error("[confirm] Sheet.sendToSheet() is not available.");
+        showStatus("Cannot post: Sheets client not ready.", "error");
+        return;
       }
 
-      // Otherwise, this is the user's initial click => show confirm
-      ev.preventDefault();
+      console.log("[confirm] sending row:", row);
+      await window.Sheet.sendToSheet(row); // fire-and-forget (no-cors under the hood)
 
-      const codeText = readCodeForDisplay();
-      if (modalText) modalText.textContent = `Confirm Card Code: ${codeText}`;
-      showModal();
-    });
-
-    // Confirm => forward the click to the original handler
-    if (btnConfirm) {
-          function invokeOriginalPost() {
-      // Try explicit app hooks first (adjust if you know the exact name):
-      if (window?.UI?.confirmNow)            return window.UI.confirmNow();
-      if (window?.UI?.onConfirm)             return window.UI.onConfirm();
-      if (window?.UI?.postSelection)         return window.UI.postSelection();
-      if (window?.Sheet?.postCurrent)        return window.Sheet.postCurrent();
-      if (window?.Sheet?.submitCurrent)      return window.Sheet.submitCurrent();
-
-      // Broadcast for any listener that used to bind the click/submit:
-      document.dispatchEvent(new CustomEvent('confirm:proceed'));
-
-      // Fallback: simulate the original click so form submit handlers fire.
-      // (Because we REMOVED the type=button override, a submit handler will run.)
-      postBtn.click();
-    }
-
-    if (btnConfirm) {
-      btnConfirm.addEventListener('click', () => {
-        hideModal();
-        invokeOriginalPost();
-      });
-    }
-
-    }
-
-    // Cancel/Close/Backdrop/ESC => close + reset
-    function cancelAndReset() {
-      hideModal();
+      appendToRecentGrid(row);
+      openSuccessModal(
+        `<div><strong>${row.name}</strong> (${row.set}${row.code ? " • " + row.code : ""})</div>
+         <div>Rarity: ${row.rarity} • Condition: ${row.condition} • Qty: ${row.qty}</div>`
+      );
       resetForm();
+    } catch (e) {
+      console.error("[confirm] post failed:", e);
+      showStatus("Failed to post. See console.", "error");
     }
-    if (btnCancel) btnCancel.addEventListener('click', cancelAndReset);
-    if (btnCloseX) btnCloseX.addEventListener('click', cancelAndReset);
-    if (backdrop)  backdrop.addEventListener('click', cancelAndReset);
-    document.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Escape' && modal.getAttribute('aria-hidden') === 'false') {
-        cancelAndReset();
-      }
-    });
-
-    console.log('[confirm.js] Confirmation gate ready.');
   }
+
+  // --- Wire up: Confirm modal buttons ---
+  codeConfirmConfirmBtn?.addEventListener("click", async () => {
+    closeCodeConfirmModal();
+    // Call the posting routine that mirrors "Post to Sheet" behavior
+    await postCurrentSelection();
+  });
+  codeConfirmCancelBtn?.addEventListener("click", () => {
+    closeCodeConfirmModal();
+    showStatus("Canceled.", "info");
+  });
+  codeConfirmCloseX?.addEventListener("click", () => {
+    closeCodeConfirmModal();
+  });
+
+  // --- Primary button on the form (labeled "Post to Sheet" in this branch) ---
+  confirmBtn?.addEventListener("click", (e) => {
+    e.preventDefault();
+
+    // If your branch wants to show a code confirmation first, open it; otherwise post directly.
+    const previewCode = extractCodeFromOption(getSelectedText(setSel));
+    if (codeModal) {
+      openCodeConfirmModal(previewCode);
+    } else {
+      // Fallback: no modal present, just post
+      postCurrentSelection();
+    }
+  });
+
+  // Give a clear log breadcrumb during testing
+  console.log("[confirm] branch confirm.js initialized");
 })();
