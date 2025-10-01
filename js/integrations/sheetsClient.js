@@ -35,37 +35,15 @@
     const url = new URL(base);
     url.searchParams.set("key", SECRET);
     Object.entries(payload || {}).forEach(([k, v]) => {
-      // stringify everything to be safe for URL params
       url.searchParams.set(k, v == null ? "" : String(v));
     });
     return url.toString();
   }
 
-  async function parseJsonResponse(res) {
-    const text = await res.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error(
-        `[sheetsClient] Non-JSON response (HTTP ${res.status}): ${text.slice(0, 300)}`
-      );
-    }
-    if (!res.ok) {
-      throw new Error(
-        `[sheetsClient] HTTP ${res.status} — ${data.message || "Request failed"}`
-      );
-    }
-    if (data.status && data.status !== "OK") {
-      throw new Error(`[sheetsClient] ${data.message || "Sheet insert failed"}`);
-    }
-    return data;
-  }
-
   /**
    * Send a row to the Google Apps Script endpoint.
-   * Prefers a "simple" POST (Content-Type: text/plain) to AVOID preflight.
-   * Falls back to GET (querystring) if POST fails for any reason.
+   * FIRE-AND-FORGET with `mode:'no-cors'` so the browser never rejects on CORS.
+   * We don't read/parse the response at all.
    */
   async function sendToSheet(row) {
     assertConfig();
@@ -73,32 +51,38 @@
     const payload = row || {};
     const postUrl = `${BASE_URL}?key=${encodeURIComponent(SECRET)}`;
 
-    // Try SIMPLE POST first — no custom headers that trigger preflight
+    // Try SIMPLE POST first — with no-cors to avoid CORS rejections.
     try {
-      console.log("[sheetsClient] POSTing (simple) payload:", payload);
-      const res = await fetch(postUrl, {
+      console.log("[sheetsClient] POSTing payload (no-cors):", payload);
+      await fetch(postUrl, {
         method: "POST",
-        headers: { "Content-Type": "text/plain" }, // simple request, no preflight
+        mode: "no-cors",                     // <— key change
+        headers: { "Content-Type": "text/plain" },
         body: JSON.stringify(payload),
       });
-      return await parseJsonResponse(res);
+      // We can't read status/body in no-cors mode; assume success.
+      return { status: "OK", transport: "POST" };
     } catch (err) {
-      console.warn("[sheetsClient] POST failed, falling back to GET:", err);
+      console.warn("[sheetsClient] POST threw, falling back to GET:", err);
     }
 
-    // Fallback: GET (also a simple request)
-    const getUrl = buildGetUrl(BASE_URL, payload);
-    // Heads up: extremely large payloads can exceed URL length limits.
-    if (getUrl.length > 1800) {
-      console.warn(
-        "[sheetsClient] GET URL is long (",
-        getUrl.length,
-        "chars ). Consider trimming payload."
-      );
+    // Fallback: GET, also no-cors to prevent rejection.
+    try {
+      const getUrl = buildGetUrl(BASE_URL, payload);
+      if (getUrl.length > 1800) {
+        console.warn(
+          "[sheetsClient] GET URL is long (",
+          getUrl.length,
+          "chars). Consider trimming payload."
+        );
+      }
+      console.log("[sheetsClient] Sending row (GET no-cors):", payload);
+      await fetch(getUrl, { method: "GET", mode: "no-cors" }); // <— no-cors
+      return { status: "OK", transport: "GET" };
+    } catch (err2) {
+      console.error("[sheetsClient] Both POST and GET failed:", err2);
+      return { status: "FAILED", error: err2?.message || String(err2) };
     }
-    console.log("[sheetsClient] Sending row (GET):", payload);
-    const res = await fetch(getUrl, { method: "GET" });
-    return await parseJsonResponse(res);
   }
 
   // Public API
