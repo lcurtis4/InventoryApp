@@ -24,23 +24,41 @@
     return Number.isFinite(v) && v > 0 ? v : d;
   }
 
+  // Build the payload we confirm + send to the sheet.
+  // Sends canonical keys the sheet expects: { name, set, code, rarity, qty, condition }
+  // Also includes aliases for compatibility with other call sites: setCode/printingCode/set_name/set_code
   function currentPayload() {
     const name =
       norm(document.getElementById('manualName')?.value) ||
       norm(document.getElementById('ocrName')?.value);
 
-    const setCode   = norm(document.getElementById('setSelect')?.value);
+    const setEl   = document.getElementById('setSelect');
+    const code    = norm(setEl?.value); // printing code from <option value="">
+    const setText = setEl?.selectedOptions?.[0]?.textContent ?? '';
+    // Prefer data attribute if you set it when building options; fall back to visible text
+    const set     = norm(setEl?.selectedOptions?.[0]?.dataset?.setName ?? setText);
+
     const rarity    = norm(document.getElementById('raritySelect')?.value);
     const qty       = toInt(document.getElementById('qty')?.value || '1', 1);
     const condition = norm(document.getElementById('conditionSelect')?.value);
 
-    return { name, setCode, rarity, qty, condition };
+    // Canonical keys:
+    const row = { name, set, code, rarity, qty, condition };
+
+    // Backward / side-compatibility:
+    row.setCode      = code;
+    row.printingCode = code;
+    row.set_name     = set;
+    row.set_code     = code;
+
+    return row;
   }
 
   // --- modal (adapter + fallback) ------------------------------------------
   function summarize(s = {}) {
     const parts = [];
     if (s.name) parts.push(`Name: ${s.name}`);
+    if (s.set) parts.push(`Set: ${s.set}`);
     if (s.setCode) parts.push(`Set: ${s.setCode}`);
     if (s.rarity) parts.push(`Rarity: ${s.rarity}`);
     if (s.condition) parts.push(`Condition: ${s.condition}`);
