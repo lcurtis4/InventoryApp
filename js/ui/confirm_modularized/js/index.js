@@ -182,6 +182,9 @@
           log('Confirmed; sending to sheet…', confirmed);
           await window.sendToSheet(confirmed);
           pushRecent(confirmed);
+          
+          if (typeof window.resetSelectionForm === "function") window.resetSelectionForm();
+
           log('Sent to sheet and recent updated.');
         } catch (e) {
           err('sendToSheet failed', e);
