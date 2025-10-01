@@ -115,7 +115,6 @@
 
   <!-- Success Modal -->
   <div id="successModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
-    <div class="modal__backdrop"></div>
     <div class="modal__dialog" role="document" tabindex="-1">
       <div class="modal__header">
         <h3 class="modal__title">Added to Sheet</h3>
@@ -127,6 +126,23 @@
       </div>
     </div>
   </div>
+
+<!-- Code Confirm Modal -->
+  <div id="codeConfirmModal" class="modal hidden" aria-hidden="true">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2>Confirm Card Code</h2>
+      <button id="codeConfirmCloseX" class="modal-close" aria-label="Close">×</button>
+    </div>
+    <div class="modal-body">
+      <p id="codeConfirmText">Confirm Card Code: (none)</p>
+    </div>
+    <div class="modal-footer">
+      <button id="codeConfirmCancelBtn" class="btn btn-secondary">Cancel</button>
+      <button id="codeConfirmConfirmBtn" class="btn btn-primary">Confirm</button>
+    </div>
+  </div>
+</div>
 
   <!-- Tesseract must load before ocr.js -->
   <script defer src="https://cdn.jsdelivr.net/npm/tesseract.js@5.0.5/dist/tesseract.min.js"></script>
