@@ -1,4 +1,4 @@
-// js/ui/confirm.js (BRANCH) — vCONF-5
+// js/ui/confirm.js (BRANCH) — vCONF-6
 // Confirm -> build row -> send via window.Sheet.sendToSheet(row)
 
 (function () {
@@ -129,8 +129,43 @@
     return null;
   }
 
+  // --- UPDATED: de-duplicate by (Name, Set, Code, Rarity, Condition) and bump Qty
   function appendToRecentGrid(row) {
     if (!gridBody) return;
+
+    const norm = (s) => (s ?? "").toString().trim();
+
+    const key = [
+      norm(row.name),
+      norm(row.set),
+      norm(row.code || ""),
+      norm(row.rarity),
+      norm(row.condition || "")
+    ].join("||");
+
+    const trs = Array.from(gridBody.querySelectorAll("tr"));
+    for (const tr of trs) {
+      const tds = tr.children;
+      if (tds.length < 7) continue;
+
+      const existingKey = [
+        norm(tds[0].textContent),
+        norm(tds[1].textContent),
+        norm(tds[2].textContent),
+        norm(tds[3].textContent),
+        norm(tds[4].textContent)
+      ].join("||");
+
+      if (existingKey === key) {
+        const current = parseInt(norm(tds[5].textContent) || "0", 10) || 0;
+        const add = parseInt(row.qty, 10) || 0;
+        tds[5].textContent = String(current + add);
+        tds[6].textContent = "yes";
+        return;
+      }
+    }
+
+    // No match → add a new line
     const tr = document.createElement("tr");
     tr.innerHTML = `
       <td>${row.name}</td>
@@ -206,5 +241,5 @@
     }
   });
 
-  console.log("[confirm] branch confirm.js initialized :: vCONF-5");
+  console.log("[confirm] branch confirm.js initialized :: vCONF-6");
 })();
