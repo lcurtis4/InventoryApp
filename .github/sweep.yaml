@@ -1,0 +1,18 @@
+branch_prefix: "sweep/refactor"
+pr_title_prefix: "[sweep]"
+labels:
+  - "sweep"
+  - "refactor"
+max_files_changed: 15
+test_commands:
+  - "npm ci"
+  - "npm run lint"
+  - "npm test -w"   # adjust to your project
+paths:
+  include:
+    - "ui/**"
+    - "src/**"
+  exclude:
+    - "dist/**"
+    - "build/**"
+conventional_commits: true
