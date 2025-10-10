@@ -50,7 +50,4 @@
 
   return { sendToSheet };
 })();
-
-
-  window.Sheet = { sendToSheet };
 })();
