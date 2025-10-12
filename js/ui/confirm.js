@@ -1,4 +1,4 @@
-// js/ui/confirm.js — vCONF-8
+// js/ui/confirm.js — vCONF-9
 // Handles confirm flow, posting, recent grid, and robust reset after success.
 
 (function () {
@@ -65,8 +65,8 @@
     successModalBody.innerHTML = messageHtml || "Added.";
     successModal.classList.remove("hidden");
     successModal.setAttribute("aria-hidden", "false");
-    successModal.querySelector(".modal__close")?.addEventListener("click", () => closeSuccessModal());
-    successModal.querySelector(".modal__ok")?.addEventListener("click", () => closeSuccessModal());
+    successModal.querySelector(".modal__close")?.addEventListener("click", () => closeSuccessModal(), { once: true });
+    successModal.querySelector(".modal__ok")?.addEventListener("click", () => closeSuccessModal(), { once: true });
   }
   function closeSuccessModal() {
     successModal?.classList.add("hidden");
@@ -154,7 +154,7 @@
         const current = parseInt(norm(tds[5].textContent) || "0", 10) || 0;
         const add = parseInt(row.qty, 10) || 0;
         tds[5].textContent = String(current + add);
-        tds[6].textContent = "✅"
+        tds[6].textContent = "✅";
         return;
       }
     }
@@ -175,39 +175,65 @@
   // ---- STRONG RESET (with change events) ----
   function resetDropdown(selectEl) {
     if (!selectEl) return;
-    selectEl.selectedIndex = 0;                    // visual reset
-    selectEl.value = selectEl.options?.[0]?.value || ""; // programmatic
+    selectEl.selectedIndex = 0;                           // visual reset
+    selectEl.value = selectEl.options?.[0]?.value || "";  // programmatic
     // Dispatch real change so any listeners (lookup, validators, etc.) react
     selectEl.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
   function resetForm() {
-    // Inputs
-    if (manualNameEl) manualNameEl.value = "";
-    if (qtyEl) { qtyEl.value = "1"; qtyEl.disabled = true; }
+  // Helper: reset a <select> to its original placeholder (index 0).
+  // If fireChange === true we emit a 'change' so upstream listeners can clear state.
+  function resetSelectToOriginalPlaceholder(sel, fireChange = true) {
+    if (!sel) return;
+    const phVal  = sel.options?.[0]?.value ?? "";
+    const phText = sel.options?.[0]?.textContent ?? "please select";
 
-    // Dropdowns (fire change so downstream logic clears too)
-    resetDropdown(setSel);
-    resetDropdown(raritySel);
-    resetDropdown(conditionSel);
+    // Replace all options with a single placeholder
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+    const opt = document.createElement("option");
+    opt.value = phVal;
+    opt.textContent = phText;
+    opt.selected = true;
+    sel.appendChild(opt);
 
-    // Transient state
-    State.selectedSetName = null;
-    State.selectedRarity = null;
-    State.selectedPrinting = null;
+    sel.disabled = false;                 // ensure it's usable
+    if (sel.dataset) sel.dataset.populated = "0"; // let other modules know it's fresh
 
-    // Disable the Post/Confirm button until new valid selections are made
-    if (confirmBtn) confirmBtn.disabled = true;
-
-    // Clear status
-    if (confirmStatus) {
-      confirmStatus.textContent = "";
-      confirmStatus.className = "status";
+    if (fireChange) {
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
     }
-
-    // Optional: publish a reset event other modules can listen for
-    document.dispatchEvent(new CustomEvent("inventory:form:reset"));
   }
+
+  // Names
+  if (manualNameEl) manualNameEl.value = "";
+  if (ocrNameEl) ocrNameEl.value = "";
+
+  // Quantity (keep enabled)
+  if (qtyEl) qtyEl.value = "1";
+
+  // IMPORTANT:
+  // - Set & Rarity: reset + fire 'change' so their listeners clear downstream state.
+  // - Condition: reset WITHOUT firing 'change' so it will be freshly populated next time.
+  resetSelectToOriginalPlaceholder(setSel,    true);
+  resetSelectToOriginalPlaceholder(raritySel, true);
+
+  // Transient state
+  State.selectedSetName   = null;
+  State.selectedRarity    = null;
+  State.selectedPrinting  = null;
+
+  // Button + statuses
+  if (confirmBtn) confirmBtn.disabled = true;
+  const ocrConf = document.getElementById("ocrConf");       if (ocrConf) ocrConf.textContent = "accuracy: —";
+  const ocrStatus = document.getElementById("ocrStatus");   if (ocrStatus) ocrStatus.textContent = "";
+  const lookupStatus = document.getElementById("lookupStatus"); if (lookupStatus) lookupStatus.textContent = "";
+  if (confirmStatus) { confirmStatus.textContent = ""; confirmStatus.className = "status"; }
+
+  // Notify other modules that the form is fresh
+  document.dispatchEvent(new CustomEvent("inventory:form:reset"));
+}
+
 
   async function postCurrentSelection() {
     if (inFlight) return;
@@ -276,5 +302,5 @@
   // Ensure button starts disabled until valid selection flow
   if (confirmBtn) confirmBtn.disabled = true;
 
-  console.log("[confirm] confirm.js initialized :: vCONF-8");
+  console.log("[confirm] confirm.js initialized :: vCONF-9");
 })();
