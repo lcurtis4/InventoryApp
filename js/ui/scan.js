@@ -124,17 +124,147 @@
     });
   });
 
-  // ── Capture confirm bar ───────────────────────────────────────────────────────
-  function showCaptureConfirmBar(name, extra) {
-    const bar   = $("captureConfirmBar");
-    const label = $("captureConfirmLabel");
+  // ── Capture confirm bar (v13.3: art-forward card, mirrors codeConfirmModal) ───
+  // Reads from State.selectedPrinting / State.selectedCard as the single source of
+  // truth (same as openCodeConfirmModal), then falls back to the passed candidate
+  // object or string. This guarantees parity with the code-path review card.
+  function showCaptureConfirmBar(candOrName, extra) {
+    const bar = $("captureConfirmBar");
     if (!bar) return;
+
+    const isObj = candOrName && typeof candOrName === "object";
+    const cand  = isObj ? candOrName : {};
+    const printing = (window.UI && window.UI.State && window.UI.State.selectedPrinting) || State?.selectedPrinting || {};
+    const card     = (window.UI && window.UI.State && window.UI.State.selectedCard)     || State?.selectedCard     || {};
+
+    // Name: candidate → printing → card → string arg → em-dash
+    const name = (isObj ? cand.name : candOrName)
+              || printing.name || card.name || "—";
+
+    // Card ID for image URL: printing → card → candidate (try multiple key spellings)
+    const id = printing.id || card.id
+            || cand.id || cand.card_id || cand.passcode || null;
+
+    // Meta fields
+    const setCode = printing.set_code   || cand.set_code   || "";
+    const rarity  = printing.set_rarity || cand.set_rarity || (window.UI?.State?.selectedRarity)  || "";
+    const setName = printing.set_name   || cand.set_name   || (window.UI?.State?.selectedSetName) || "";
+
+    // Image URL: explicit imageUrl on printing/cand → id-derived → none
+    const imageUrl = printing.imageUrl || cand.imageUrl || cand.image_url_small || cand.image_url
+                  || (id ? `https://images.ygoprodeck.com/images/cards_small/${id}.jpg` : null);
+
+    const nameEl = $("captureConfirmName");
+    const metaEl = $("captureConfirmMeta");
+    const artEl  = $("captureConfirmArt");
+    const label  = $("captureConfirmLabel");
+
+    if (nameEl) nameEl.textContent = name;
+
+    if (metaEl) {
+      const parts = [];
+      if (setCode) parts.push(setCode);
+      if (rarity)  parts.push(rarity);
+      if (setName) parts.push(setName);
+      let metaText = parts.join(" · ");
+      if (!metaText && extra) metaText = String(extra);
+      metaEl.textContent = metaText;
+    }
+
+    if (artEl) {
+      if (imageUrl) {
+        artEl.onerror = function () {
+          // If small variant fails and we have an id, try full-size; else hide
+          if (id && !artEl.dataset.triedFull) {
+            artEl.dataset.triedFull = "1";
+            artEl.src = `https://images.ygoprodeck.com/images/cards/${id}.jpg`;
+          } else {
+            artEl.onerror = null;
+            artEl.style.display = "none";
+          }
+        };
+        delete artEl.dataset.triedFull;
+        artEl.alt = name;
+        artEl.src = imageUrl;
+        artEl.style.display = "";
+      } else {
+        artEl.onerror = null;
+        artEl.removeAttribute("src");
+        artEl.style.display = "none";
+      }
+    }
+
+    // Keep hidden legacy label populated for any code that still reads it
     if (label) {
       const extraStr = extra ? ` — ${extra}` : "";
       label.textContent = `Accept: "${name}"${extraStr}?`;
     }
+
     bar.style.display = "";
     hideCandidatesPicker();
+
+    // v13.3: If we don't yet have an id, first try the synchronous in-memory cache
+    // (instant on any previously-resolved card). If that hits, re-render immediately
+    // without spinning up an async fetch.
+    if (!id && name && name !== "—" && window.Lookup && typeof window.Lookup.getCachedByName === "function") {
+      const cached = window.Lookup.getCachedByName(name);
+      if (cached && cached.id) {
+        // Promote into State so the modal and re-renders see it
+        try {
+          if (window.UI && window.UI.State) {
+            window.UI.State.selectedCard = window.UI.State.selectedCard || {};
+            if (!window.UI.State.selectedCard.id) {
+              window.UI.State.selectedCard.id   = cached.id;
+              window.UI.State.selectedCard.name = cached.name || name;
+              window.UI.State.selectedCard.sets = cached.sets || [];
+            }
+          }
+        } catch (_) {}
+        // Re-render with the enriched data — returns synchronously, no spinner needed.
+        return showCaptureConfirmBar({ id: cached.id, name: cached.name || name, sets: cached.sets || [] }, extra);
+      }
+    }
+
+    // v13.2: If we still don't have an id (visual-only match, not in cache), fire a
+    // name lookup to enrich the candidate. Show a placeholder shimmer in the art slot
+    // so the bar doesn't look broken while the fetch is in flight.
+    if (!id && name && name !== "—" && window.Lookup && typeof window.Lookup.fillSetsForCandidate === "function") {
+      // v13.3: visible placeholder while fetching
+      if (artEl && !imageUrl) {
+        artEl.removeAttribute("src");
+        artEl.style.display = "";
+        artEl.classList.add("ccb-art-loading");
+      }
+      // Tag the bar with a fetch id so a stale fetch can't overwrite a newer scan.
+      const fetchId = (bar.dataset.fetchId = String(Date.now()));
+      const probe = { name };
+      try {
+        Promise.resolve(window.Lookup.fillSetsForCandidate(probe))
+          .then(() => {
+            if (artEl) artEl.classList.remove("ccb-art-loading");
+            if (bar.dataset.fetchId !== fetchId) return; // superseded
+            if (!probe.id && (!probe.sets || !probe.sets.length)) return;
+            // Promote to selectedCard so the modal also sees the id
+            try {
+              if (window.UI && window.UI.State) {
+                window.UI.State.selectedCard = window.UI.State.selectedCard || {};
+                if (!window.UI.State.selectedCard.id && probe.id) {
+                  window.UI.State.selectedCard.id   = probe.id;
+                  window.UI.State.selectedCard.name = probe.name || name;
+                  window.UI.State.selectedCard.sets = probe.sets || [];
+                }
+              }
+            } catch (_) {}
+            // Re-render the bar with the enriched data (re-entrant safe: id will
+            // now be present so this fetch branch won't fire again).
+            showCaptureConfirmBar(probe, extra);
+          })
+          .catch(function () {
+            if (artEl) artEl.classList.remove("ccb-art-loading");
+            /* silent — leave bar as-is */
+          });
+      } catch (_) { /* silent */ }
+    }
   }
   function hideCaptureConfirmBar() {
     const bar = $("captureConfirmBar");
@@ -386,14 +516,14 @@
       if (candidates.length === 1) {
         applyCodeCandidate(candidates[0], code);
         setMatchSource("manual-code", code);
-        showCaptureConfirmBar(candidates[0].name, candidates[0].set_code || code);
+        showCaptureConfirmBar(candidates[0], candidates[0].set_code || code);
       } else {
         status($("lookupStatus"), `${candidates.length} printings found for ${code}.`);
         setAutoStatus("Multiple printings — choose one below.");
         showCandidatesPicker(candidates, code, (picked) => {
           applyCodeCandidate(picked, code);
           setMatchSource("manual-code", picked.set_code || code);
-          showCaptureConfirmBar(picked.name, picked.set_code || code);
+          showCaptureConfirmBar(picked, picked.set_code || code);
         }, doRescan);
       }
     } catch (e) {
@@ -465,7 +595,7 @@
       applyCodeCandidate(best, primaryCode);
       const label = best.set_code ? `${best.set_code} · ${best.set_rarity || "?"}` : (best.set_rarity || "");
       setAutoStatus(`Found: ${best.name}. Choose condition + qty, then confirm.`);
-      showCaptureConfirmBar(best.name, label || null);
+      showCaptureConfirmBar(best, label || null);
       return;
     }
 
@@ -480,7 +610,7 @@
       applyCodeCandidate(picked, primaryCode || picked.set_code || "");
       if (scanMode === "code") setMatchSource("exact-code", picked.set_code || primaryCode);
       else setMatchSource("name-fallback", scannedText || "");
-      showCaptureConfirmBar(picked.name, picked.set_code ? `${picked.set_code} · ${picked.set_rarity || ""}` : null);
+      showCaptureConfirmBar(picked, picked.set_code ? `${picked.set_code} · ${picked.set_rarity || ""}` : null);
     }, doRescan);
   }
 
@@ -540,16 +670,25 @@
       }
     });
 
-    // Accept & Confirm bar — v8.2 fix: do NOT force-enable confirmBtn.
-    // enableQtyIfReady() already handles the enable condition (requires condition + qty).
+    // Accept & Confirm bar — v13.1: behave the same as the code-path confirm flow.
+    // If we already have a resolved printing (set + rarity present), open the
+    // codeConfirmModal review card (identical UX to the code path). Otherwise,
+    // fall back to the legacy name-path lookup trigger.
     $("captureConfirmBtn")?.addEventListener("click", () => {
       hideCaptureConfirmBar();
       if (State.selectedSetName && State.selectedRarity) {
-        // Code path: set/rarity already filled. Just prompt for condition + qty.
+        // Resolved card → enable Post button readiness, then open the review modal.
         enableQtyIfReady();
-        status($("lookupStatus"), "Choose condition and enter quantity, then Post to Sheet.");
+        const previewCode = State?.selectedPrinting?.set_code || "";
+        // Prefer the canonical opener exposed by confirm.js; fall back to clicking
+        // the existing confirmBtn (which triggers the same modal flow).
+        if (window.UI && typeof window.UI.openCodeConfirmModal === "function") {
+          window.UI.openCodeConfirmModal(previewCode);
+        } else {
+          $("confirmBtn")?.click();
+        }
       } else {
-        // Name path: trigger lookup
+        // Name path: no printing resolved yet — trigger printings lookup.
         const confText = $("ocrConf")?.textContent || "";
         const acc = parseInt(confText.replace(/[^0-9]/g, ""), 10) || 0;
         if (acc >= MIN_ACC || acc >= 65 || confText.includes("exact")) {
