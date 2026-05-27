@@ -60,11 +60,19 @@
   const State = (UI.State     = UI.State     || {});
 
   // Code-confirm modal elements
-  const codeModal            = $("#codeConfirmModal");
-  const codeConfirmText      = $("#codeConfirmText");
-  const codeConfirmCloseX    = $("#codeConfirmCloseX");
-  const codeConfirmCancelBtn = $("#codeConfirmCancelBtn");
-  const codeConfirmConfirmBtn = $("#codeConfirmConfirmBtn");
+  const codeModal              = $("#codeConfirmModal");
+  const codeConfirmText        = $("#codeConfirmText");           // legacy (kept hidden in v13)
+  const codeConfirmCloseX      = $("#codeConfirmCloseX");
+  const codeConfirmCancelBtn   = $("#codeConfirmCancelBtn");
+  const codeConfirmConfirmBtn  = $("#codeConfirmConfirmBtn");
+  // v13: art-forward card preview targets
+  const codeConfirmArt         = $("#codeConfirmArt");
+  const codeConfirmNameEl      = $("#codeConfirmName");
+  const codeConfirmSetEl       = $("#codeConfirmSet");
+  const codeConfirmCodeEl      = $("#codeConfirmCode");
+  const codeConfirmRarityEl    = $("#codeConfirmRarity");
+  const codeConfirmQtyEl       = $("#codeConfirmQty");
+  const codeConfirmConditionEl = $("#codeConfirmCondition");
 
   // Recent grid
   const gridBody = document.querySelector("#grid tbody");
@@ -131,10 +139,49 @@
     }
   }
 
-  // ---- Code-confirm modal (works correctly via aria-hidden CSS rule — unchanged) ----
+  // ---- Code-confirm modal (v13: art-forward card preview) -------------------
+  // Populates the card-style modal with art on the left and name/set/code/
+  // rarity/qty/condition rows on the right. Pulls data from State (selected
+  // printing/card) and the live form fields so a single call site keeps
+  // working without re-routing data through the caller.
   function openCodeConfirmModal(codePreview) {
     if (!codeModal) return;
+
+    const printing = State?.selectedPrinting || {};
+    const card     = State?.selectedCard     || {};
+    const name     = (manualNameEl?.value || "").trim() || (ocrNameEl?.value || "").trim() || card.name || "—";
+    const setName  = State?.selectedSetName  || getSelectedValue(setSel)    || getSelectedText(setSel)    || "—";
+    const rarity   = State?.selectedRarity   || getSelectedValue(raritySel) || getSelectedText(raritySel) || "—";
+    const code     = printing.set_code || codePreview || extractCodeFromOption(getSelectedText(setSel)) || "—";
+    const qty      = (qtyEl?.value || "1").trim() || "1";
+    const condition = getSelectedValue(conditionSel) || getSelectedText(conditionSel) || "—";
+
+    // Image URL: prefer explicit imageUrl, then derive from id, else hide image.
+    const cardId   = printing.id || card.id || null;
+    const imgUrl   = printing.imageUrl
+                  || (cardId ? `https://images.ygoprodeck.com/images/cards/${cardId}.jpg` : null);
+
+    if (codeConfirmArt) {
+      if (imgUrl) {
+        codeConfirmArt.src     = imgUrl;
+        codeConfirmArt.alt     = name;
+        codeConfirmArt.style.display = "";
+        codeConfirmArt.onerror = function () { this.style.display = "none"; };
+      } else {
+        codeConfirmArt.removeAttribute("src");
+        codeConfirmArt.style.display = "none";
+      }
+    }
+    if (codeConfirmNameEl)      codeConfirmNameEl.textContent      = name;
+    if (codeConfirmSetEl)       codeConfirmSetEl.textContent       = setName;
+    if (codeConfirmCodeEl)      codeConfirmCodeEl.textContent      = code;
+    if (codeConfirmRarityEl)    codeConfirmRarityEl.textContent    = rarity;
+    if (codeConfirmQtyEl)       codeConfirmQtyEl.textContent       = qty;
+    if (codeConfirmConditionEl) codeConfirmConditionEl.textContent = condition;
+
+    // Keep the legacy hidden text node in sync in case anything else reads it.
     if (codeConfirmText) codeConfirmText.textContent = "Confirm Card Code: " + (codePreview || "(none)");
+
     codeModal.classList.remove("hidden");
     codeModal.setAttribute("aria-hidden", "false");
   }

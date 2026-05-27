@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>YGO Scanner (v12)</title>
+  <title>YGO Scanner (v13.3)</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>YGO Scanner <span class="ver-badge">v12</span></h1>
+  <h1>YGO Scanner <span class="ver-badge">v13.3</span></h1>
   <div class="muted">Code-first scan: reads set code (bottom of card) + name simultaneously; image assist re-ranks candidates.</div>
 
   <div class="layout">
@@ -61,11 +61,19 @@
             <span id="ocrStatus" class="status"></span>
           </div>
 
-          <!-- Capture confirm bar -->
+          <!-- Capture confirm bar (v13.1: art-forward card layout) -->
           <div id="captureConfirmBar" class="capture-confirm-bar" style="display:none;">
-            <span id="captureConfirmLabel" class="muted">Accept scanned result?</span>
-            <button id="captureConfirmBtn" class="primary">Accept &amp; Confirm</button>
-            <button id="captureRejectBtn" class="secondary">Rescan</button>
+            <img id="captureConfirmArt" class="ccb-art" alt="" />
+            <div class="ccb-info">
+              <div id="captureConfirmName" class="ccb-name">—</div>
+              <div id="captureConfirmMeta" class="ccb-meta"></div>
+              <div class="ccb-actions">
+                <button id="captureConfirmBtn" class="primary">Accept &amp; Confirm</button>
+                <button id="captureRejectBtn" class="secondary">Rescan</button>
+              </div>
+              <!-- v13.1: legacy label kept hidden for back-compat -->
+              <span id="captureConfirmLabel" class="muted" style="display:none;"></span>
+            </div>
           </div>
 
           <!-- v8: Candidate picker (code + image-assist ranked) -->
@@ -170,15 +178,27 @@
     </div>
   </div>
 
-  <!-- Code Confirm Modal -->
+  <!-- Code Confirm Modal (v13: art-forward card preview) -->
   <div id="codeConfirmModal" class="modal hidden" aria-hidden="true">
     <div class="modal-content">
       <div class="modal-header">
-        <h2>Please Confirm the Card's Set Code</h2>
+        <h2>Confirm this card</h2>
         <button id="codeConfirmCloseX" class="modal-close" aria-label="Close">×</button>
       </div>
       <div class="modal-body">
-        <p id="codeConfirmText">Confirm Card Code: (none)</p>
+        <div id="codeConfirmCard" class="cc-card">
+          <img id="codeConfirmArt" class="cc-art" alt="" />
+          <div class="cc-info">
+            <div id="codeConfirmName" class="cc-name">—</div>
+            <div class="cc-row"><span class="cc-label">Set</span><span id="codeConfirmSet" class="cc-value">—</span></div>
+            <div class="cc-row"><span class="cc-label">Code</span><span id="codeConfirmCode" class="cc-value cc-code">—</span></div>
+            <div class="cc-row"><span class="cc-label">Rarity</span><span id="codeConfirmRarity" class="cc-value">—</span></div>
+            <div class="cc-row"><span class="cc-label">Qty</span><span id="codeConfirmQty" class="cc-value">—</span></div>
+            <div class="cc-row"><span class="cc-label">Condition</span><span id="codeConfirmCondition" class="cc-value">—</span></div>
+          </div>
+        </div>
+        <!-- v13: legacy text node kept hidden for backward-compat with any code that still writes to it -->
+        <p id="codeConfirmText" style="display:none;"></p>
       </div>
       <div class="modal-footer">
         <button id="codeConfirmCancelBtn" class="btn btn-secondary">Cancel</button>

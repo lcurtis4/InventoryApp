@@ -130,26 +130,77 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
 /* Extra breathing room around the confirm/add button */
 #confirmBtn { margin: 8px 0; }
 
-/* Capture confirm bar (appears after scanner locks a name) */
+/* Capture confirm bar (v13.1: art-forward card layout, matches .cc-card) */
 .capture-confirm-bar {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  background: var(--hint);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
-  margin: 6px 0 4px;
+  flex-direction: row;
+  gap: 12px;
+  align-items: stretch;
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  margin: 6px 0 8px;
 }
-.capture-confirm-bar #captureConfirmLabel {
+.ccb-art {
+  width: 72px;
+  height: 105px;
+  object-fit: cover;
+  border-radius: 5px;
+  flex-shrink: 0;
+  background: #eee;
+  display: block;
+}
+/* v13.3: shimmer placeholder while name→id fetch is in flight */
+.ccb-art-loading {
+  background: linear-gradient(90deg, #eee 0%, #f5f5f5 50%, #eee 100%);
+  background-size: 200% 100%;
+  animation: ccb-shimmer 1.2s ease-in-out infinite;
+}
+@keyframes ccb-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.ccb-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   flex: 1 1 auto;
-  font-weight: 600;
+  min-width: 0;
 }
-.capture-confirm-bar .primary,
-.capture-confirm-bar .secondary {
+.ccb-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--fg);
+  line-height: 1.25;
+  word-break: break-word;
+}
+.ccb-meta {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-family: 'Courier New', Courier, monospace;
+  letter-spacing: 0.03em;
+  min-height: 1em;
+}
+.ccb-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
+  flex-wrap: wrap;
+}
+.ccb-actions .primary,
+.ccb-actions .secondary {
   flex: 0 0 auto;
   padding: 6px 12px;
+}
+
+/* Stack on small screens */
+@media (max-width: 480px) {
+  .capture-confirm-bar { flex-direction: column; align-items: center; gap: 10px; }
+  .ccb-art { width: 100px; height: 146px; }
+  .ccb-info { width: 100%; }
+  .ccb-actions { justify-content: center; }
 }
 
 /* ---------------- Modal ---------------- */
@@ -189,7 +240,7 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
-  width: min(520px, calc(100vw - 40px));
+  width: min(560px, calc(100vw - 40px)); /* v13: a touch wider to fit art + details row */
   background: #fff;                    /* solid white */
   border-radius: 14px;
   box-shadow: 0 18px 60px rgba(0,0,0,.25);
@@ -236,6 +287,80 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
     width: 94vw;
     border-radius: 12px;
   }
+}
+
+/* ====================================================================== */
+/* v13: art-forward card preview inside #codeConfirmModal                  */
+/* Mirrors the .cand-card visual language from the candidates picker      */
+/* but laid out as a horizontal row: art left, details right.             */
+/* ====================================================================== */
+.cc-card {
+  display: flex;
+  flex-direction: row;
+  gap: 14px;
+  align-items: stretch;
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  margin: 4px 0 12px;
+}
+.cc-art {
+  width: 140px;
+  height: 204px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: #eee;
+  display: block;
+}
+.cc-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cc-name {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--fg);
+  line-height: 1.25;
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+.cc-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+.cc-label {
+  flex: 0 0 78px;
+  color: var(--muted);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.72rem;
+}
+.cc-value {
+  color: var(--fg);
+  font-weight: 600;
+  word-break: break-word;
+  min-width: 0;
+}
+.cc-value.cc-code {
+  font-family: 'Courier New', Courier, monospace;
+  letter-spacing: 0.04em;
+}
+
+/* Stack vertically on small screens */
+@media (max-width: 480px) {
+  .cc-card { flex-direction: column; align-items: center; gap: 10px; }
+  .cc-art  { width: 120px; height: 175px; }
+  .cc-info { width: 100%; }
+  .cc-label { flex-basis: 70px; }
 }
 
 /* ====================================================================== */

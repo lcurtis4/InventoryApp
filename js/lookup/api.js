@@ -655,6 +655,14 @@
     return false;
   }
 
+  // v13.3: synchronous cache hit — returns { id, name, sets } or null without touching the network.
+  function getCachedByName(name) {
+    const key = String(name || '').trim().toLowerCase();
+    if (!key) return null;
+    const hit = _byName.get(key);
+    return hit || null;
+  }
+
   // Public API
   const api = {
     fetchCandidates,
@@ -664,6 +672,8 @@
     resolveNameFromScanNgrams,
     // NEW:
     fetchCardPrice, // returns number (e.g., 0.17) or "" if unavailable
+    // v13.3:
+    getCachedByName, // synchronous lookup of in-memory _byName cache
   };
 
   Object.assign(window.Lookup, api);
