@@ -130,6 +130,28 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
 /* Extra breathing room around the confirm/add button */
 #confirmBtn { margin: 8px 0; }
 
+/* Capture confirm bar (appears after scanner locks a name) */
+.capture-confirm-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: var(--hint);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 6px 0 4px;
+}
+.capture-confirm-bar #captureConfirmLabel {
+  flex: 1 1 auto;
+  font-weight: 600;
+}
+.capture-confirm-bar .primary,
+.capture-confirm-bar .secondary {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+}
+
 /* ---------------- Modal ---------------- */
 .modal { position:fixed; inset:0; display:none; }
 .modal.is-open { display:block; }
@@ -214,4 +236,317 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
     width: 94vw;
     border-radius: 12px;
   }
+}
+
+/* ====================================================================== */
+/* v7: Version badge                                                        */
+/* ====================================================================== */
+.ver-badge {
+  font-size: 0.6em;
+  font-weight: 500;
+  color: var(--muted);
+  vertical-align: middle;
+  background: var(--hint);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1px 7px;
+  margin-left: 6px;
+  letter-spacing: 0.03em;
+}
+
+/* ====================================================================== */
+/* v7: Top-3 Candidates Picker                                              */
+/* ====================================================================== */
+.candidates-picker {
+  margin: 6px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--hint);
+  padding: 10px;
+}
+.cand-header {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--fg);
+  margin-bottom: 8px;
+}
+.cand-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cand-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 6px 6px;
+  cursor: pointer;
+  min-width: 80px;
+  max-width: 110px;
+  flex: 1 1 80px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  text-align: center;
+}
+.cand-card:hover,
+.cand-card:focus-visible {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(0,187,85,0.18);
+  outline: none;
+}
+.cand-img {
+  width: 72px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 4px;
+  display: block;
+  background: #eee;
+}
+.cand-name {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--fg);
+  line-height: 1.2;
+  word-break: break-word;
+  hyphens: auto;
+}
+.cand-conf {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.cand-footer {
+  margin-top: 8px;
+  display: flex;
+  justify-content: flex-end;
+}
+.cand-rescan {
+  padding: 6px 12px;
+  font-size: 0.92rem;
+}
+
+/* On very small screens, stack candidates vertically */
+@media (max-width: 420px) {
+  .cand-list { flex-direction: column; }
+  .cand-card { max-width: 100%; flex: 1 1 auto; flex-direction: row; }
+  .cand-img  { width: 48px; height: 66px; flex-shrink: 0; }
+}
+
+/* ====================================================================== */
+/* v8: Code-First UI additions                                              */
+/* ====================================================================== */
+
+/* Code input row */
+.code-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.code-input {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  flex: 1 1 auto;
+  width: auto;
+}
+.code-help {
+  margin-bottom: 6px;
+}
+.code-help code {
+  font-family: 'Courier New', Courier, monospace;
+  background: #f0f0f0;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 0.9em;
+}
+#codeLookupBtn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 10px 14px;
+}
+
+/* v8: candidate card enhancements (meta + score row + exact badge) */
+.cand-meta {
+  font-size: 0.70rem;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.3;
+  word-break: break-all;
+}
+.cand-conf-row {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 2px;
+}
+.cand-conf,
+.cand-vis {
+  font-size: 0.70rem;
+  color: var(--muted);
+  background: #f0f0f0;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.cand-vis {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+.cand-exact-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--primary);
+  border-radius: 4px;
+  padding: 1px 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* v8: visual assist note inside picker */
+.cand-vis-note {
+  font-size: 0.78rem;
+  color: #2e7d32;
+  background: #e8f5e9;
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin-bottom: 6px;
+  border: 1px solid #c8e6c9;
+}
+
+/* Danger / error status text */
+.status.danger,
+.status[class*="error"] {
+  color: #c0392b;
+}
+
+/* ====================================================================== */
+/* v8.2: Additions                                                          */
+/* ====================================================================== */
+
+/* --- Separate code-crop debug canvas --- */
+.debug-label {
+  display: block;
+  font-size: 0.82rem;
+  margin-bottom: 3px;
+  font-weight: 600;
+}
+.debug-canvas--code {
+  height: 80px;          /* shorter — code strip is a narrow crop */
+  background: #1a1a1a;
+  border: 1px solid #444;
+}
+.debug-hint {
+  font-size: 0.78rem;
+  font-weight: 400;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  vertical-align: middle;
+}
+.debug-hint--warn {
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffc107;
+}
+.debug-hint--ok {
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #28a745;
+}
+
+/* --- Match-source status bar --- */
+.match-source-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--hint);
+  font-size: 0.88rem;
+}
+.match-source-icon {
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+.match-source-label {
+  flex: 1 1 auto;
+  font-weight: 600;
+  color: var(--fg);
+}
+/* Mode colour variants */
+.match-source-bar[data-mode="exact-code"] {
+  background: #e8f5e9;
+  border-color: #81c784;
+}
+.match-source-bar[data-mode="exact-code"] .match-source-icon { color: #2e7d32; }
+
+.match-source-bar[data-mode="code-unresolved"] {
+  background: #fff8e1;
+  border-color: #ffd54f;
+}
+.match-source-bar[data-mode="code-unresolved"] .match-source-icon { color: #e65100; }
+
+.match-source-bar[data-mode="name-fallback"] {
+  background: #fff3e0;
+  border-color: #ffb74d;
+}
+.match-source-bar[data-mode="name-fallback"] .match-source-icon { color: #bf360c; }
+
+.match-source-bar[data-mode="manual-code"] {
+  background: #e3f2fd;
+  border-color: #64b5f6;
+}
+.match-source-bar[data-mode="manual-code"] .match-source-icon { color: #1565c0; }
+
+/* --- .needs-input field highlight --- */
+/* Applied to select/input when a required field still needs attention */
+.needs-input,
+select.needs-input,
+input.needs-input {
+  border: 2px solid #f59e0b !important;
+  background: #fffbeb !important;
+  box-shadow: 0 0 0 3px rgba(245,158,11,0.18) !important;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+/* Smooth removal once filled */
+select:not(.needs-input),
+input:not(.needs-input) {
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+/* Torch button (optional, shown when torch is available) */
+#torchBtn {
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  font-size: 0.9rem;
+}
+#torchBtn.torch-on {
+  background: #f59e0b;
+  color: #fff;
+}
+
+/* v10: merged / appended success-modal banners */
+.merged-banner {
+  background: #ecfeff;
+  border: 1px solid #06b6d4;
+  color: #0e7490;
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.appended-banner {
+  background: #f0fdf4;
+  border: 1px solid #22c55e;
+  color: #166534;
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  font-weight: 600;
 }

@@ -108,7 +108,7 @@
         openBox(); setHighlight(0);
       } catch (e) {
         // Do NOT treat mid-typing misses as errors in the console
-        console.debug("[autocomplete] skipped:", e);
+        // CONSOLE-OFF v12 console.debug("[autocomplete] skipped:", e);
         closeBox();
       }
     }, DEBOUNCE_MS);

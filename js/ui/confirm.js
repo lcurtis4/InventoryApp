@@ -1,39 +1,78 @@
-// js/ui/confirm.js — vCONF-9
-// Handles confirm flow, posting, recent grid, and robust reset after success.
+// js/ui/confirm.js — v10.2
+//
+// v10.2 changes:
+//   • validateRow() relaxed: name + condition + qty are now the ONLY required
+//     fields. Set / Rarity / Code are all optional. Posting a name-only row
+//     is supported when YGOPRODeck can't return printings.
+//
+// v10.1 changes:
+//   • After a successful post, dispatch `inventory:form:reset` AFTER calling
+//     resetForm() (unchanged) — scan.js now listens for this event and:
+//        - pauses the scanner so it doesn't re-detect the same card
+//        - calls clearFormAndState() to wipe ocrName/captureBar/State/etc.
+//        - flips the toggle to "Resume Scanning"
+//     The old reset path only cleared the form fields owned by confirm.js,
+//     which is why the Scanned Name + Accept bar persisted after save.
+//
+// v10 changes:
+//   • sendToSheet() now returns {merged, newQty} on duplicate-merge.
+//     Success modal + status bar + recent-grid bump now reflect this:
+//     "Merged into row N (qty: X)" vs "Added row N".
+//
+// v8.2 (preserved):
+//
+// POST BUG FIX (v8.2):
+//   Root cause: openSuccessModal() was calling successModal.classList.remove("hidden")
+//   which has no effect — successModal has class="modal" and CSS requires ".modal.is-open"
+//   to display it. The .is-open class was never added, so the success modal was always
+//   invisible. The POST itself succeeded (row reached the sheet) but the user saw no
+//   confirmation and the form silently reset, making it appear that posting was broken.
+//
+//   Fix: route success modal open/close through window.UI.modal.open() / .close(),
+//   which correctly adds/removes .is-open. modal.js is loaded before confirm.js and
+//   sets window.UI.modal synchronously in its IIFE, so it is always available here.
+//
+//   All other POST logic (field names, payload shape, fetch mode, secret, URL) is
+//   IDENTICAL to v6 (last known-good). No structural changes.
+//
+// Other v8.2 changes:
+//   • Persists condition + qty to localStorage (carried forward from v8.1).
+//   • resetForm() restores qty from localStorage instead of resetting to 1.
+//   • Version log changed to v8.2.
 
 (function () {
+  "use strict";
+
   // ---- Element helpers ----
+  // Use querySelector so this works regardless of $ alias availability.
   const $ = (sel) => document.querySelector(sel);
-  const ocrNameEl = $("#ocrName");
+  const ocrNameEl    = $("#ocrName");
   const manualNameEl = $("#manualName");
-  const setSel = $("#setSelect");
-  const raritySel = $("#raritySelect");
-  const qtyEl = $("#qty");
+  const setSel       = $("#setSelect");
+  const raritySel    = $("#raritySelect");
+  const qtyEl        = $("#qty");
   const conditionSel = $("#conditionSelect");
-  const confirmBtn = $("#confirmBtn");
+  const confirmBtn   = $("#confirmBtn");
   const confirmStatus = $("#confirmPickStatus") || $("#confirmStatus");
 
-  // Shared state
-  const UI = (window.UI = window.UI || {});
-  const State = (UI.State = UI.State || {});
+  // Shared state (populated by state.js which loads before confirm.js)
+  const UI    = (window.UI    = window.UI    || {});
+  const State = (UI.State     = UI.State     || {});
 
-  // Modals
-  const codeModal = $("#codeConfirmModal");
-  const codeConfirmText = $("#codeConfirmText");
-  const codeConfirmCloseX = $("#codeConfirmCloseX");
+  // Code-confirm modal elements
+  const codeModal            = $("#codeConfirmModal");
+  const codeConfirmText      = $("#codeConfirmText");
+  const codeConfirmCloseX    = $("#codeConfirmCloseX");
   const codeConfirmCancelBtn = $("#codeConfirmCancelBtn");
   const codeConfirmConfirmBtn = $("#codeConfirmConfirmBtn");
-
-  const successModal = $("#successModal");
-  const successModalBody = $("#successModalBody");
 
   // Recent grid
   const gridBody = document.querySelector("#grid tbody");
 
-  // Submit guard
+  // Submit guard — prevents double-posting on rapid clicks
   let inFlight = false;
 
-  // --- Select helpers ---
+  // ---- Select value helpers ----
   function getSelectedOption(selectEl) {
     if (!selectEl || !selectEl.options) return null;
     const idx = typeof selectEl.selectedIndex === "number" ? selectEl.selectedIndex : -1;
@@ -41,40 +80,61 @@
     return selectEl.options[idx] || null;
   }
   function getSelectedText(selectEl) {
-    const opt = getSelectedOption(selectEl);
-    return opt?.textContent?.trim?.() ?? "";
+    return getSelectedOption(selectEl)?.textContent?.trim?.() ?? "";
   }
   function getSelectedValue(selectEl) {
-    const opt = getSelectedOption(selectEl);
-    return (opt?.value ?? "").toString().trim();
+    return (getSelectedOption(selectEl)?.value ?? "").toString().trim();
   }
-
   function extractCodeFromOption(optText) {
     const m = optText && optText.match(/\(([A-Za-z0-9\-]+)\)\s*$/);
     return m ? m[1] : "";
   }
 
+  // ---- Status ----
   function showStatus(msg, kind = "info") {
     if (!confirmStatus) return;
     confirmStatus.textContent = msg;
     confirmStatus.className = "status " + (kind === "error" ? "error" : kind === "ok" ? "ok" : "");
   }
 
+  // ---- Success modal — v8.2 fix: use modal.js open/close ----
+  // modal.js sets window.UI.modal in its IIFE (before this file runs).
+  // modal.js.open() adds ".is-open" class which makes .modal.is-open { display:block }
+  // work correctly in style.css.
   function openSuccessModal(messageHtml) {
-    if (!successModal) return;
-    successModalBody.innerHTML = messageHtml || "Added.";
-    successModal.classList.remove("hidden");
-    successModal.setAttribute("aria-hidden", "false");
-    successModal.querySelector(".modal__close")?.addEventListener("click", () => closeSuccessModal(), { once: true });
-    successModal.querySelector(".modal__ok")?.addEventListener("click", () => closeSuccessModal(), { once: true });
+    if (window.UI?.modal?.open) {
+      // Preferred path: delegate to modal.js which handles .is-open, focus, scroll lock, etc.
+      window.UI.modal.open(messageHtml || "Added.");
+    } else {
+      // Fallback: directly add .is-open if modal.js failed to load for any reason
+      const m = document.getElementById("successModal");
+      const body = document.getElementById("successModalBody");
+      if (!m) return;
+      if (body) body.innerHTML = messageHtml || "Added.";
+      m.classList.add("is-open");
+      m.setAttribute("aria-hidden", "false");
+      // Wire close buttons manually in case modal.js init() didn't run
+      const closeOnce = () => closeSuccessModal();
+      m.querySelector(".modal__close")?.addEventListener("click", closeOnce, { once: true });
+      m.querySelector(".modal__ok")?.addEventListener("click", closeOnce, { once: true });
+    }
   }
+  // modal.js.close() removes .is-open and resumes scanning.
   function closeSuccessModal() {
-    successModal?.classList.add("hidden");
-    successModal?.setAttribute("aria-hidden", "true");
+    if (window.UI?.modal?.close) {
+      window.UI.modal.close();
+    } else {
+      const m = document.getElementById("successModal");
+      if (!m) return;
+      m.classList.remove("is-open");
+      m.setAttribute("aria-hidden", "true");
+    }
   }
+
+  // ---- Code-confirm modal (works correctly via aria-hidden CSS rule — unchanged) ----
   function openCodeConfirmModal(codePreview) {
     if (!codeModal) return;
-    codeConfirmText.textContent = "Confirm Card Code: " + (codePreview || "(none)");
+    if (codeConfirmText) codeConfirmText.textContent = "Confirm Card Code: " + (codePreview || "(none)");
     codeModal.classList.remove("hidden");
     codeModal.setAttribute("aria-hidden", "false");
   }
@@ -83,11 +143,13 @@
     codeModal?.setAttribute("aria-hidden", "true");
   }
 
+  // ---- Build row from current UI state ----
+  // Field names and shape are IDENTICAL to v6 (last known-good posting version).
+  // price is intentionally left blank.
   function buildRowFromUI() {
-    const name = (manualNameEl?.value || "").trim() || (ocrNameEl?.value || "").trim();
-
-    const setName  = State?.selectedSetName || getSelectedValue(setSel) || getSelectedText(setSel);
-    const rarity   = State?.selectedRarity  || getSelectedValue(raritySel) || getSelectedText(raritySel);
+    const name     = (manualNameEl?.value || "").trim() || (ocrNameEl?.value || "").trim();
+    const setName  = State?.selectedSetName  || getSelectedValue(setSel)    || getSelectedText(setSel);
+    const rarity   = State?.selectedRarity   || getSelectedValue(raritySel) || getSelectedText(raritySel);
     const printing = State?.selectedPrinting || null;
 
     let code = printing?.set_code || "";
@@ -96,65 +158,43 @@
     const qty       = parseInt(qtyEl?.value || "1", 10) || 1;
     const condition = getSelectedValue(conditionSel) || getSelectedText(conditionSel);
 
-    const system =
-      (window.APP_CONFIG?.DEVICE_NAME ?? window.APP_CONFIG?.deviceName) ||
-      window.UI?.State?.deviceName ||
-      "desktop";
-    State.source = system;
-
     return {
       timestamp: new Date().toISOString(),
       name,
-      set: setName || "",
-      code: code || "",
-      rarity: rarity || "",
-      condition: condition || "",
+      set:       setName    || "",
+      code:      code       || "",
+      rarity:    rarity     || "",
+      condition: condition  || "",
       qty,
-      source: "Logan's Desktop",
+      price:     "",              // intentionally blank — Apps Script fills this
+      source:    "Logan's Desktop",
     };
   }
 
+  // ---- Validate row before posting ----
   function validateRow(row) {
-    if (!row.name) return "Please choose a card name (Manual or Scanned).";
-    if (!row.set) return "Please choose a Set.";
-    if (!row.rarity) return "Please choose a Rarity.";
-    if (!row.condition) return "Please choose a Condition.";
+    // v10.2: name + condition + qty only. Set/Rarity/Code are optional.
+    if (!row.name)                return "Please choose a card name (Manual or Scanned).";
+    if (!row.condition)           return "Please choose a Condition.";
     if (!row.qty || row.qty < 1) return "Quantity must be at least 1.";
     return null;
   }
 
-  // De-dup recent grid
+  // ---- Append to recent-items grid (de-duped by name+set+code+rarity+condition) ----
   function appendToRecentGrid(row) {
     if (!gridBody) return;
-
     const norm = (s) => (s ?? "").toString().trim();
+    const key = [norm(row.name), norm(row.set), norm(row.code || ""), norm(row.rarity), norm(row.condition || "")].join("||");
 
-    const key = [
-      norm(row.name),
-      norm(row.set),
-      norm(row.code || ""),
-      norm(row.rarity),
-      norm(row.condition || "")
-    ].join("||");
-
-    const trs = Array.from(gridBody.querySelectorAll("tr"));
-    for (const tr of trs) {
+    for (const tr of Array.from(gridBody.querySelectorAll("tr"))) {
       const tds = tr.children;
-      if (tds.length < 7) continue;
-
-      const existingKey = [
-        norm(tds[0].textContent),
-        norm(tds[1].textContent),
-        norm(tds[2].textContent),
-        norm(tds[3].textContent),
-        norm(tds[4].textContent)
-      ].join("||");
-
+      if (tds.length < 6) continue;
+      const existingKey = [norm(tds[0].textContent), norm(tds[1].textContent), norm(tds[2].textContent), norm(tds[3].textContent), norm(tds[4].textContent)].join("||");
       if (existingKey === key) {
         const current = parseInt(norm(tds[5].textContent) || "0", 10) || 0;
-        const add = parseInt(row.qty, 10) || 0;
-        tds[5].textContent = String(current + add);
-        tds[6].textContent = "✅";
+        tds[5].textContent = String(current + (parseInt(row.qty, 10) || 0));
+        const statusCell = tds[tds.length - 1];
+        if (statusCell) statusCell.textContent = "✅";
         return;
       }
     }
@@ -167,103 +207,132 @@
       <td>${row.rarity}</td>
       <td>${row.condition}</td>
       <td>${row.qty}</td>
-      <td>✅</td>
-    `;
+      <td class="price">—</td>
+      <td>✅</td>`;
     gridBody.prepend(tr);
   }
 
-  // ---- STRONG RESET (with change events) ----
-  function resetDropdown(selectEl) {
-    if (!selectEl) return;
-    selectEl.selectedIndex = 0;                           // visual reset
-    selectEl.value = selectEl.options?.[0]?.value || "";  // programmatic
-    // Dispatch real change so any listeners (lookup, validators, etc.) react
-    selectEl.dispatchEvent(new Event("change", { bubbles: true }));
-  }
-
+  // ---- Reset form after a successful post ----
   function resetForm() {
-  // Helper: reset a <select> to its original placeholder (index 0).
-  // If fireChange === true we emit a 'change' so upstream listeners can clear state.
-  function resetSelectToOriginalPlaceholder(sel, fireChange = true) {
-    if (!sel) return;
-    const phVal  = sel.options?.[0]?.value ?? "";
-    const phText = sel.options?.[0]?.textContent ?? "please select";
-
-    // Replace all options with a single placeholder
-    while (sel.firstChild) sel.removeChild(sel.firstChild);
-    const opt = document.createElement("option");
-    opt.value = phVal;
-    opt.textContent = phText;
-    opt.selected = true;
-    sel.appendChild(opt);
-
-    sel.disabled = false;                 // ensure it's usable
-    if (sel.dataset) sel.dataset.populated = "0"; // let other modules know it's fresh
-
-    if (fireChange) {
+    function resetSelect(sel) {
+      if (!sel) return;
+      // Keep only the first placeholder option
+      const ph = sel.options[0];
+      while (sel.firstChild) sel.removeChild(sel.firstChild);
+      if (ph) { sel.appendChild(ph); ph.selected = true; }
+      sel.disabled = false;
+      if (sel.dataset) sel.dataset.populated = "0";
       sel.dispatchEvent(new Event("change", { bubbles: true }));
     }
+
+    if (manualNameEl) manualNameEl.value = "";
+    if (ocrNameEl)    ocrNameEl.value    = "";
+
+    // Restore qty from localStorage (v8.1 behaviour)
+    if (qtyEl) qtyEl.value = String(State.loadPersistedQty?.() ?? 1);
+
+    resetSelect(setSel);
+    resetSelect(raritySel);
+    // Condition is intentionally preserved (user usually scans many cards of same condition)
+
+    State.selectedSetName   = null;
+    State.selectedRarity    = null;
+    State.selectedPrinting  = null;
+    // Note: State.selectedCondition is NOT cleared so persistent condition keeps working
+
+    if (confirmBtn) confirmBtn.disabled = true;
+    const ocrConf      = document.getElementById("ocrConf");      if (ocrConf)      ocrConf.textContent      = "accuracy: —";
+    const ocrStatus    = document.getElementById("ocrStatus");    if (ocrStatus)    ocrStatus.textContent    = "";
+    const lookupStatus = document.getElementById("lookupStatus"); if (lookupStatus) lookupStatus.textContent = "";
+    showStatus("");
+
+    // Clear any .needs-input highlights
+    document.querySelectorAll(".needs-input").forEach(el => el.classList.remove("needs-input"));
+
+    // Hide capture confirm bar
+    const captureBar = document.getElementById("captureConfirmBar");
+    if (captureBar) captureBar.style.display = "none";
+
+    // Hide match-source bar
+    const msBar = document.getElementById("matchSourceBar");
+    if (msBar) msBar.style.display = "none";
+
+    document.dispatchEvent(new CustomEvent("inventory:form:reset"));
   }
 
-  // Names
-  if (manualNameEl) manualNameEl.value = "";
-  if (ocrNameEl) ocrNameEl.value = "";
-
-  // Quantity (keep enabled)
-  if (qtyEl) qtyEl.value = "1";
-
-  // IMPORTANT:
-  // - Set & Rarity: reset + fire 'change' so their listeners clear downstream state.
-  // - Condition: reset WITHOUT firing 'change' so it will be freshly populated next time.
-  resetSelectToOriginalPlaceholder(setSel,    true);
-  resetSelectToOriginalPlaceholder(raritySel, true);
-
-  // Transient state
-  State.selectedSetName   = null;
-  State.selectedRarity    = null;
-  State.selectedPrinting  = null;
-
-  // Button + statuses
-  if (confirmBtn) confirmBtn.disabled = true;
-  const ocrConf = document.getElementById("ocrConf");       if (ocrConf) ocrConf.textContent = "accuracy: —";
-  const ocrStatus = document.getElementById("ocrStatus");   if (ocrStatus) ocrStatus.textContent = "";
-  const lookupStatus = document.getElementById("lookupStatus"); if (lookupStatus) lookupStatus.textContent = "";
-  if (confirmStatus) { confirmStatus.textContent = ""; confirmStatus.className = "status"; }
-
-  // Notify other modules that the form is fresh
-  document.dispatchEvent(new CustomEvent("inventory:form:reset"));
-}
-
-
+  // ---- Core POST routine ----
   async function postCurrentSelection() {
     if (inFlight) return;
-    try {
-      inFlight = true;
-      if (confirmBtn) confirmBtn.disabled = true;
-      showStatus("Posting…");
+    inFlight = true;
+    if (confirmBtn) confirmBtn.disabled = true;
+    showStatus("Posting…");
 
+    try {
       const row = buildRowFromUI();
       const err = validateRow(row);
-      if (err) { showStatus(err, "error"); console.warn("[confirm] validation failed:", err, row); return; }
+      if (err) {
+        showStatus(err, "error");
+        // CONSOLE-OFF v12 console.warn("[confirm] validation failed:", err, row);
+        return;   // finally block re-enables inFlight=false
+      }
 
       if (!window.Sheet || typeof window.Sheet.sendToSheet !== "function") {
-        console.error("[confirm] Sheet.sendToSheet() is not available.");
+        console.error("[confirm] Sheet.sendToSheet() not available — check config.js and sheetsClient.js load order.");
         showStatus("Cannot post: Sheets client not ready.", "error");
         return;
       }
 
-      console.log("[confirm] sending row:", row);
-      await window.Sheet.sendToSheet(row);
+      // CONSOLE-OFF v12 console.log("[confirm] posting row:", row);
+      // v9.3: sendToSheet now returns { ok, row?, error? } instead of fire-and-forget.
+      // Only show "Added to Sheet" modal on real success; otherwise surface the error.
+      const result = await window.Sheet.sendToSheet(row);
 
-      appendToRecentGrid(row);
+      if (!result || result.ok !== true) {
+        const errMsg = (result && result.error) || "unknown error";
+        console.error("[confirm] post failed:", errMsg, result);
+        showStatus("✗ Post failed: " + errMsg, "error");
+        return; // do NOT append to recent grid, do NOT reset form, do NOT show success modal
+      }
+
+      // v10: when the backend merged into an existing row, prefer the merged
+      // qty so the recent grid stays in sync with the sheet's actual quantity.
+      const isMerged = result.merged === true;
+      const displayRow = { ...row };
+      if (isMerged && Number.isFinite(result.newQty)) {
+        // recent-grid is keyed the same way; bumping by the addedQty matches
+        // the user's intent and what the sheet just did.
+        displayRow.qty = result.addedQty ?? row.qty;
+      }
+      appendToRecentGrid(displayRow);
+
+      // Persist condition + qty for next card
+      try { State.savePersistedCondition?.(row.condition || ""); } catch (_) {}
+      try { State.savePersistedQty?.(row.qty);                   } catch (_) {}
+
+      // Show success modal — v8.2 fix: uses modal.js.open() → adds .is-open correctly
+      // v10: distinguish merged-into-existing vs newly-appended.
+      const rowSuffix = result.row ? ` <span class="muted">— row ${result.row}</span>` : "";
+      const headline = isMerged
+        ? `<div class="merged-banner">➕ Merged into existing row (qty now <strong>${result.newQty}</strong>)</div>`
+        : `<div class="appended-banner">✅ Added as new row</div>`;
       openSuccessModal(
-        `<div><strong>${row.name}</strong> (${row.set}${row.code ? " • " + row.code : ""})</div>
-         <div>Rarity: ${row.rarity} • Condition: ${row.condition} • Qty: ${row.qty}</div>`
+        `${headline}
+         <div><strong>${row.name}</strong> (${row.set}${row.code ? " • " + row.code : ""})${rowSuffix}</div>
+         <div>Rarity: ${row.rarity} &bull; Condition: ${row.condition} &bull; Qty added: ${row.qty}</div>`
       );
 
-      // Critical: fully reset so another click can't re-post same payload
       resetForm();
-      showStatus("Ready for next card.", "ok");
+      if (isMerged) {
+        showStatus(
+          "✓ Merged into row " + (result.row || "?") + " (qty: " + result.newQty + "). Ready for next card.",
+          "ok"
+        );
+      } else {
+        showStatus(
+          "✓ Added to sheet (row " + (result.row || "?") + "). Ready for next card.",
+          "ok"
+        );
+      }
     } catch (e) {
       console.error("[confirm] post failed:", e);
       showStatus("Failed to post. See console.", "error");
@@ -272,7 +341,7 @@
     }
   }
 
-  // --- Wire up modal buttons ---
+  // ---- Wire up code-confirm modal buttons ----
   codeConfirmConfirmBtn?.addEventListener("click", async () => {
     closeCodeConfirmModal();
     await postCurrentSelection();
@@ -280,18 +349,19 @@
   codeConfirmCancelBtn?.addEventListener("click", () => {
     closeCodeConfirmModal();
     showStatus("Canceled.", "info");
+    if (confirmBtn) confirmBtn.disabled = false; // re-enable so user can try again
   });
   codeConfirmCloseX?.addEventListener("click", () => {
     closeCodeConfirmModal();
+    if (confirmBtn) confirmBtn.disabled = false;
   });
 
-  // --- Primary button ---
+  // ---- Primary Post to Sheet button ----
   confirmBtn?.addEventListener("click", (e) => {
     e.preventDefault();
     if (inFlight) return;
 
-    const previewCode =
-      (State?.selectedPrinting?.set_code) || extractCodeFromOption(getSelectedText(setSel));
+    const previewCode = State?.selectedPrinting?.set_code || extractCodeFromOption(getSelectedText(setSel));
     if (codeModal) {
       openCodeConfirmModal(previewCode);
     } else {
@@ -299,8 +369,7 @@
     }
   });
 
-  // Ensure button starts disabled until valid selection flow
   if (confirmBtn) confirmBtn.disabled = true;
 
-  console.log("[confirm] confirm.js initialized :: vCONF-9");
+  // CONSOLE-OFF v12 console.log("[confirm] confirm.js initialized :: v10.2");
 })();

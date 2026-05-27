@@ -1,4 +1,7 @@
-// js/scanner/overlay.js
+// js/scanner/overlay.js  — v8.3d
+// v8.3c: also outlines the set-code scan regions (from codeOcr.CODE_REGIONS)
+//        as thin yellow rectangles inside the main card guide, so the user
+//        can visually verify where the OCR is looking.
 (function () {
   "use strict";
 
@@ -73,6 +76,29 @@
       ctx.textBaseline = "bottom";
       ctx.textAlign = "center";
       ctx.fillText(GUIDE.cornerText, c.width / 2, y - 10);
+    }
+
+    // v8.3c: outline each code-scan region in yellow so the user can see
+    // exactly where the OCR is looking. Coordinates are fractions of the
+    // card rect (top, height, left, width).
+    const regions =
+      (window.ScannerParts.codeOcr && window.ScannerParts.codeOcr.CODE_REGIONS) || [];
+    if (regions.length) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#ffcc00";
+      ctx.setLineDash([4, 3]);
+      ctx.font = "11px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+      ctx.fillStyle = "#ffcc00";
+      ctx.textBaseline = "top";
+      ctx.textAlign = "left";
+      for (const r of regions) {
+        const rx = x + targetW * r.left;
+        const ry = y + targetH * r.top;
+        const rw = targetW * r.width;
+        const rh = targetH * r.height;
+        ctx.strokeRect(rx, ry, rw, rh);
+        if (r.name) ctx.fillText(r.name, rx + 2, ry + rh + 1);
+      }
     }
 
     ctx.restore();

@@ -12,7 +12,7 @@
       // If you later want this to do something,
       // you could hook up extra diagnostics here.
       if (window.console && console.debug) {
-        console.debug("[lookup/ui] init() shim loaded");
+        // CONSOLE-OFF v12 console.debug("[lookup/ui] init() shim loaded");
       }
     }
   };

@@ -1,14 +1,23 @@
-// === EDIT THIS FILE ===
-// Paste your Apps Script Web App URL and the same SECRET you set in the script.
+// config.js — v9.3
+// v9.3: Updated SHEETS_SCRIPT_URL to the new Apps Script deployment
+//       (the prior AKfycbxOj1-...XHIpwY deployment returned HTTP 404).
 window.APP_CONFIG = {
-  // Use your newly deployed Web App "/exec" URL (permissions must allow access)
-  SHEETS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbxOj1-XHIpwY-Mf7j3dL7tnjpsBqXsffXA0AuRzYlFgxTUXqT_hZLOP6vmRzOm0cbeSRA/exec",
-
-  // Must match the key your Apps Script expects
+  SHEETS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzldsPIOgeU2HMlAd8zBSk3sjErQntCcyJ3tdeq69yrH2P2KDMKf1zyV68VbudQhzkjgA/exec",
   SECRET: "0104200206121997",
-
-  // Optional toggles
   AUTO_START_CAMERA: true,
   DEBUG_OPEN_DEFAULT: true
-
 };
+
+// ── v8.2 runtime tuning (paste into DevTools console to adjust live) ─────────
+//
+// Code-crop geometry (codeOcr.js):
+//   window.ScannerParts.codeOcr.CODE_REGION.fromBottomFrac = 0.18;  // default
+//   window.ScannerParts.codeOcr.CODE_REGION.heightFrac     = 0.10;
+//   window.ScannerParts.codeOcr.CODE_REGION.widthFrac      = 0.65;
+//
+// Low-light thresholds (codeOcr.js — brightness/contrast of raw crop, 0–255):
+//   window.ScannerParts.codeOcr.LOW_BRIGHTNESS_THRESHOLD = 55;
+//   window.ScannerParts.codeOcr.LOW_CONTRAST_THRESHOLD   = 12;
+//
+// Image-assist backend hook (future):
+//   window.ImageAssist.backendHook = async (dataUrl, candidates) => { ... };
