@@ -910,9 +910,10 @@ tbody td:last-child { text-align:center; }
   border-radius: 4px;
   padding: 1px 5px;
 }
+/* UI-9: status tokens — visual-confidence chip uses success palette */
 .cand-vis {
-  background: #e8f5e9;
-  color: #2e7d32;
+  background: var(--color-success-bg);
+  color: var(--color-success);
 }
 .cand-exact-badge {
   font-size: var(--text-xs);
@@ -925,21 +926,21 @@ tbody td:last-child { text-align:center; }
   letter-spacing: 0.04em;
 }
 
-/* v8: visual assist note inside picker */
+/* v8: visual assist note inside picker (UI-9: status tokens — success) */
 .cand-vis-note {
   font-size: var(--text-xs);
-  color: #2e7d32;
-  background: #e8f5e9;
-  border-radius: 6px;
+  color: var(--color-success);
+  background: var(--color-success-bg);
+  border-radius: var(--radius-sm);
   padding: 4px 8px;
   margin-bottom: 6px;
-  border: 1px solid #c8e6c9;
+  border: 1px solid var(--color-success);
 }
 
-/* Danger / error status text */
+/* Danger / error status text — UI-9: status tokens */
 .status.danger,
 .status[class*="error"] {
-  color: #c0392b;
+  color: var(--color-danger);
 }
 
 /* ====================================================================== */
@@ -966,15 +967,16 @@ tbody td:last-child { text-align:center; }
   border-radius: 4px;
   vertical-align: middle;
 }
+/* UI-9: debug-hint variants — status tokens */
 .debug-hint--warn {
-  background: #fff3cd;
-  color: #856404;
-  border: 1px solid #ffc107;
+  background: var(--color-warn-bg);
+  color: var(--color-warn);
+  border: 1px solid var(--color-warn);
 }
 .debug-hint--ok {
-  background: #d4edda;
-  color: #155724;
-  border: 1px solid #28a745;
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
 }
 
 /* --- Match-source status bar --- */
@@ -996,30 +998,34 @@ tbody td:last-child { text-align:center; }
   font-weight: 600;
   color: var(--fg);
 }
-/* Mode colour variants */
+/* Mode colour variants — UI-9: all modes consume status tokens.        */
+/* exact-code     → success (green)                                       */
+/* code-unresolved→ warn    (amber) — OCR read a code we couldn't resolve */
+/* name-fallback  → warn    (amber) — no code, matched by name only      */
+/* manual-code    → info    (blue)  — user typed it themselves           */
 .match-source-bar[data-mode="exact-code"] {
-  background: #e8f5e9;
-  border-color: #81c784;
+  background: var(--color-success-bg);
+  border-color: var(--color-success);
 }
-.match-source-bar[data-mode="exact-code"] .match-source-icon { color: #2e7d32; }
+.match-source-bar[data-mode="exact-code"] .match-source-icon { color: var(--color-success); }
 
 .match-source-bar[data-mode="code-unresolved"] {
-  background: #fff8e1;
-  border-color: #ffd54f;
+  background: var(--color-warn-bg);
+  border-color: var(--color-warn);
 }
-.match-source-bar[data-mode="code-unresolved"] .match-source-icon { color: #e65100; }
+.match-source-bar[data-mode="code-unresolved"] .match-source-icon { color: var(--color-warn); }
 
 .match-source-bar[data-mode="name-fallback"] {
-  background: #fff3e0;
-  border-color: #ffb74d;
+  background: var(--color-warn-bg);
+  border-color: var(--color-warn);
 }
-.match-source-bar[data-mode="name-fallback"] .match-source-icon { color: #bf360c; }
+.match-source-bar[data-mode="name-fallback"] .match-source-icon { color: var(--color-warn); }
 
 .match-source-bar[data-mode="manual-code"] {
-  background: #e3f2fd;
-  border-color: #64b5f6;
+  background: var(--color-info-bg);
+  border-color: var(--color-info);
 }
-.match-source-bar[data-mode="manual-code"] .match-source-icon { color: #1565c0; }
+.match-source-bar[data-mode="manual-code"] .match-source-icon { color: var(--color-info); }
 
 /* --- .needs-input field highlight --- */
 /* Applied to select/input when a required field still needs attention */
