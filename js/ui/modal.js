@@ -29,6 +29,15 @@
     close(){
       const m = $("successModal");
       if (!m) return;
+      // UI-7: aria-hidden focus violation fix — if focus is inside the modal
+      // we are about to hide, blur it BEFORE setting aria-hidden="true".
+      // Otherwise Chrome logs: "Blocked aria-hidden on an element because
+      // its descendant retained focus." Move focus to <body> as a neutral
+      // fallback so keyboard users don't lose their place entirely.
+      if (m.contains(document.activeElement)) {
+        try { document.activeElement.blur(); } catch (_) {}
+        try { document.body.focus(); } catch (_) {}
+      }
       m.classList.remove("is-open");
       m.setAttribute("aria-hidden", "true");
       document.documentElement.style.overflow = "";

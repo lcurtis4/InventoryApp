@@ -153,6 +153,14 @@
     } else {
       const m = document.getElementById("successModal");
       if (!m) return;
+      // UI-7: aria-hidden focus violation fix — if focus is currently inside
+      // the modal we are about to hide, blur it so the browser doesn't warn
+      // about "Blocked aria-hidden on an element because its descendant
+      // retained focus." Then return focus to <body> as a neutral fallback.
+      if (m.contains(document.activeElement)) {
+        try { document.activeElement.blur(); } catch (_) {}
+        try { document.body.focus(); } catch (_) {}
+      }
       m.classList.remove("is-open");
       m.setAttribute("aria-hidden", "true");
     }
@@ -205,8 +213,16 @@
     codeModal.setAttribute("aria-hidden", "false");
   }
   function closeCodeConfirmModal() {
-    codeModal?.classList.add("hidden");
-    codeModal?.setAttribute("aria-hidden", "true");
+    if (!codeModal) return;
+    // UI-7: aria-hidden focus violation fix — blur any focused descendant
+    // BEFORE we set aria-hidden="true", otherwise the browser will log:
+    // "Blocked aria-hidden on an element because its descendant retained focus."
+    if (codeModal.contains(document.activeElement)) {
+      try { document.activeElement.blur(); } catch (_) {}
+      try { document.body.focus(); } catch (_) {}
+    }
+    codeModal.classList.add("hidden");
+    codeModal.setAttribute("aria-hidden", "true");
   }
 
   // ---- Build row from current UI state ----
