@@ -2,25 +2,34 @@ name: Sprint Progress Tracker
 
 on:
   schedule:
-    # Daily at 09:00 UTC (~4 AM CDT / 5 AM CST). Single daily refresh.
-    - cron: "0 9 * * *"
+    # Hourly safety net so the board never goes stale > 1h, even if events are missed.
+    - cron: "0 * * * *"
+  # Event-based triggers: refresh whenever an issue moves or changes meaningfully
+  issues:
+    types: [opened, closed, reopened, edited, labeled, unlabeled, assigned, unassigned]
+  # Sub-issue link/unlink events — keeps progress accurate when children attach/detach
   workflow_dispatch: # allow manual runs from the Actions tab
 
 permissions:
   contents: read
   issues: write
 
+# Coalesce overlapping runs so we don't double-fire when many events land at once
+concurrency:
+  group: sprint-progress
+  cancel-in-progress: true
+
 jobs:
   update-progress:
     runs-on: ubuntu-latest
+    # Skip self-triggered loops: don't react to our own bot edits to the epic body
+    if: >-
+      github.event_name != 'issues' ||
+      !contains(github.event.issue.body, '<!-- progress:start -->') ||
+      github.event.action != 'edited'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install gh CLI extension auth
-        run: gh --version
-        env:
-          GH_TOKEN: ${{ secrets.PM_BOARD_TOKEN }}
 
       - name: Run progress updater
         env:
