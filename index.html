@@ -7,8 +7,28 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>YGO Scanner <span class="ver-badge">v13.4</span></h1>
-  <div class="muted">Code-first scan: reads set code (bottom of card) + name simultaneously; image assist re-ranks candidates.</div>
+  <!-- UI-3: App header / shell -->
+  <header class="app-header" role="banner">
+    <div class="app-header__inner">
+      <a class="app-brand" href="." aria-label="YGO Scanner home">
+        <span class="app-brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="4" y="2" width="24" height="28" rx="3" fill="currentColor" opacity="0.15"/>
+            <rect x="4" y="2" width="24" height="28" rx="3" stroke="currentColor" stroke-width="2"/>
+            <circle cx="16" cy="14" r="5" stroke="currentColor" stroke-width="2" fill="none"/>
+            <path d="M11 23 H21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <h1 class="app-brand__wordmark">YGO Scanner</h1>
+      </a>
+      <div class="app-header__meta">
+        <span class="ver-badge" title="App version">v13.4</span>
+        <div class="app-header__account" aria-hidden="true" title="Account (multi-tenant — coming in #12)"></div>
+      </div>
+    </div>
+  </header>
+
+  <p class="app-subtitle muted">Code-first scan: reads set code (bottom of card) + name simultaneously; image assist re-ranks candidates.</p>
 
   <div class="layout">
     <!-- LEFT: Camera panel -->
