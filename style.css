@@ -399,11 +399,66 @@ input::placeholder {
 .row .grow { flex:1 1 auto; }
 .row .col { flex:1 1 0; min-width:0; }
 
+/* ====================================================================== */
+/* UI-8: Recent Items table polish                                         */
+/* Zebra striping, hover row, sticky header treatment, empty-state row.    */
+/* All token-driven. Zero HTML changes — empty state uses CSS :has().       */
+/* ====================================================================== */
 /* .tablewrap visuals come from the .surface recipe above */
-.tablewrap { width:100%; overflow:auto; }
-table { width:100%; border-collapse:collapse; font-size:var(--text-sm); }
-th, td { border-bottom:1px solid var(--color-neutral-200); padding:8px 10px; text-align:left; }
-th { background:var(--color-neutral-50); position:sticky; top:0; z-index:1; }
+.tablewrap {
+  width:100%;
+  overflow:auto;
+  max-height: 480px;                /* scroll body, keep sticky header in view */
+}
+table {
+  width:100%;
+  border-collapse:separate;          /* required for sticky-header + clean borders */
+  border-spacing:0;
+  font-size:var(--text-sm);
+  color:var(--color-neutral-900);
+}
+th, td {
+  border-bottom:1px solid var(--color-neutral-200);
+  padding:10px 12px;
+  text-align:left;
+  vertical-align:middle;
+}
+/* Sticky header treatment: tinted, subtle bottom border, slightly stronger text */
+th {
+  background:var(--color-neutral-100);
+  position:sticky;
+  top:0;
+  z-index:1;
+  font-weight:600;
+  color:var(--color-neutral-700);
+  text-transform:uppercase;
+  font-size:var(--text-xs);
+  letter-spacing:0.04em;
+  border-bottom:2px solid var(--color-neutral-200);
+}
+/* Zebra striping — odd rows slightly tinted for scannability */
+tbody tr:nth-child(odd)  td { background:#fff; }
+tbody tr:nth-child(even) td { background:var(--color-neutral-50); }
+/* Hover row — light primary tint signals interactivity even if non-clickable */
+tbody tr:hover td { background:var(--color-primary-50); }
+/* Last row — drop the bottom border so it doesn't double with table edge */
+tbody tr:last-child td { border-bottom:0; }
+/* Sent? column (last col) — nudge to center for the checkmark glyph */
+tbody td:last-child { text-align:center; }
+
+/* Empty-state row: when tbody has no rows, show a helpful placeholder    */
+/* via the .tablewrap wrapper using :has(). Falls back gracefully on      */
+/* browsers without :has() (the table just looks blank, no break).        */
+.tablewrap:has(#grid tbody:empty)::after {
+  content: "No items yet — add one to see it here.";
+  display: block;
+  padding: 24px 16px;
+  color: var(--color-neutral-700);
+  font-size: var(--text-sm);
+  text-align: center;
+  background: var(--color-neutral-50);
+  border-top: 1px solid var(--color-neutral-200);
+}
 
 /* ---------- Camera: lock size (no layout shift while panning) ---------- */
 .camwrap {
