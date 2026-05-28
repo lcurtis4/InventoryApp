@@ -70,7 +70,9 @@
     if (!setSel) return;
     const sets = [...new Set((State.selectedCard?.sets || []).map(p => p.set_name).filter(Boolean))];
     setSel.innerHTML = "";
-    setSel.appendChild(makePlaceholder("Set"));
+    // v24 (#25): unified placeholder "please select" — was "Set" when populateSetDropdown()
+    // ran after candidate confirm, causing the placeholder to regress mid-flow.
+    setSel.appendChild(makePlaceholder("please select"));
     sets.forEach(n => {
       const o = document.createElement("option");
       o.value = n; o.textContent = n;
