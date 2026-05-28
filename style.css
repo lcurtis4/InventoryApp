@@ -177,14 +177,48 @@ h2 { font-size: var(--text-lg); font-weight: 600; line-height: 1.3; }
 .layout { display:grid; grid-template-columns: 1fr 1fr; gap:16px; align-items:start; }
 .left-col, .right-col { width:100%; }
 
-/* Panels / Form card */
-.panel, .formcard {
-  background:var(--card);
-  border:1px solid var(--border);
-  border-radius:12px;
-  box-shadow:var(--shadow);
-  padding:14px;
+/* ====================================================================== */
+/* UI-4: Surface system                                                    */
+/* One recipe for every card/panel/banner. Existing classes are grouped    */
+/* into the selector list rather than duplicated — no HTML changes needed. */
+/* ====================================================================== */
+
+/* Base surface: white, neutral-200 border, --radius-md, sm shadow */
+.surface,
+.tablewrap,
+.capture-confirm-bar,
+.cc-card {
+  background: #fff;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
+
+/* Elevated surface variant: main form/camera panels */
+.surface--elevated,
+.panel,
+.formcard {
+  background: #fff;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-4);
+}
+
+/* Subtle surface variant: status bars + pickers (no shadow, tinted bg) */
+.surface--subtle,
+.candidates-picker,
+.match-source-bar {
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
+/* Padding helpers (surfaces that already declare their own padding keep it) */
+.capture-confirm-bar { padding: var(--space-3); }
+.cc-card { padding: var(--space-3); }
+
 .formcard .group + .group { border-top:1px solid var(--border); padding-top:8px; margin-top:10px; }
 .formcard h2 { font-size:var(--text-lg); margin:0 0 8px; }
 
@@ -223,7 +257,8 @@ input[readonly] { background:var(--color-neutral-100); color:var(--color-neutral
 .row .grow { flex:1 1 auto; }
 .row .col { flex:1 1 0; min-width:0; }
 
-.tablewrap { width:100%; overflow:auto; border:1px solid var(--border); border-radius:10px; background:#fff; }
+/* .tablewrap visuals come from the .surface recipe above */
+.tablewrap { width:100%; overflow:auto; }
 table { width:100%; border-collapse:collapse; font-size:var(--text-sm); }
 th, td { border-bottom:1px solid var(--color-neutral-200); padding:8px 10px; text-align:left; }
 th { background:var(--color-neutral-50); position:sticky; top:0; z-index:1; }
@@ -282,15 +317,12 @@ th { background:var(--color-neutral-50); position:sticky; top:0; z-index:1; }
 #confirmBtn { margin: 8px 0; }
 
 /* Capture confirm bar (v13.1: art-forward card layout, matches .cc-card) */
+/* .capture-confirm-bar visuals come from the .surface recipe above */
 .capture-confirm-bar {
   display: flex;
   flex-direction: row;
   gap: 12px;
   align-items: stretch;
-  background: #fff;
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  padding: 10px;
   margin: 6px 0 8px;
 }
 .ccb-art {
@@ -445,15 +477,12 @@ th { background:var(--color-neutral-50); position:sticky; top:0; z-index:1; }
 /* Mirrors the .cand-card visual language from the candidates picker      */
 /* but laid out as a horizontal row: art left, details right.             */
 /* ====================================================================== */
+/* .cc-card visuals come from the .surface recipe above */
 .cc-card {
   display: flex;
   flex-direction: row;
   gap: 14px;
   align-items: stretch;
-  background: #fff;
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  padding: 12px;
   margin: 4px 0 12px;
 }
 .cc-art {
@@ -533,12 +562,10 @@ th { background:var(--color-neutral-50); position:sticky; top:0; z-index:1; }
 /* ====================================================================== */
 /* v7: Top-3 Candidates Picker                                              */
 /* ====================================================================== */
+/* .candidates-picker visuals come from the .surface--subtle recipe above */
 .candidates-picker {
   margin: 6px 0 4px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--hint);
-  padding: 10px;
+  padding: var(--space-3);
 }
 .cand-header {
   font-size: var(--text-sm);
@@ -735,15 +762,13 @@ th { background:var(--color-neutral-50); position:sticky; top:0; z-index:1; }
 }
 
 /* --- Match-source status bar --- */
+/* .match-source-bar base visuals come from .surface--subtle above; modes (UI-9) override bg/border */
 .match-source-bar {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-top: 8px;
   padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--hint);
   font-size: var(--text-sm);
 }
 .match-source-icon {
