@@ -1,4 +1,22 @@
-// js/ui/lookup.js  — v10.4
+// js/ui/lookup.js  — v13.4 (Sprint 2: form-state cleanup)
+// v13.4 changes (Sprint 2 — closes #5, #6):
+//   • Issue #6: Set / Rarity dropdown placeholders restored. All three
+//     repopulate paths (populateSetDropdown, initial rarity wipe after
+//     name pick, rarity rebuild on set-change) now emit
+//     `<option value='' disabled selected>Set|Rarity</option>` instead of
+//     the previous "please select" label. Placeholder is disabled so users
+//     cannot re-select it after picking a real option.
+//   • Issue #5: Stop nuking persisted Condition on every name-lookup run.
+//     Previously the click handler unconditionally did
+//       $("conditionSelect").value = "";
+//       State.selectedCondition = null;
+//     which wiped the localStorage-restored condition AND left
+//     conditionSelect briefly empty (causing the stray .needs-input that
+//     scan.js' code-match path could re-apply). We now preserve any
+//     existing condition value (typical workflow: user scans many cards
+//     of the same condition) and defensively strip .needs-input from
+//     conditionSelect on every repopulate path.
+//
 // v10.4: status message updated to reflect the cardset-scan fallback may take
 //        several seconds when the primary cardinfo.php paths are down.
 // v9.2: Safety-net for empty Set/Rarity dropdowns. When the picked candidate has
@@ -31,15 +49,25 @@
     return { text: "", source: "none" };
   }
 
+  // v13.4 (Sprint 2, #6): shared placeholder factory so every repopulate path
+  // emits the same `<option value='' disabled selected>Label</option>` shape.
+  function makePlaceholder(label) {
+    const ph = document.createElement("option");
+    ph.value = "";
+    ph.textContent = label;
+    ph.disabled = true;
+    ph.selected = true;
+    return ph;
+  }
+
   // v9.2: shared populate helper so safety-net path reuses identical logic
+  // v13.4 (Sprint 2, #6): placeholder label is now "Set" (not "please select").
   function populateSetDropdown() {
     const setSel = $("setSelect");
     if (!setSel) return;
     const sets = [...new Set((State.selectedCard?.sets || []).map(p => p.set_name).filter(Boolean))];
     setSel.innerHTML = "";
-    const ph = document.createElement("option");
-    ph.value = ""; ph.textContent = "please select"; ph.disabled = true;
-    setSel.appendChild(ph);
+    setSel.appendChild(makePlaceholder("Set"));
     sets.forEach(n => {
       const o = document.createElement("option");
       o.value = n; o.textContent = n;
@@ -88,8 +116,18 @@
       try { window.Scanner.pause(); window.UI.showResume(true); $("autoStatus").textContent = "Scanning paused (lookup)…"; } catch (_) {}
       status($("lookupStatus"), `Searching YGOPRODeck…`);
       $("setSelect").innerHTML = ""; $("raritySelect").innerHTML = "";
-      if ($("conditionSelect")) $("conditionSelect").value = "";
-      State.selectedCard = State.selectedPrinting = State.selectedSetName = State.selectedRarity = State.selectedCondition = null;
+      // v13.4 (Sprint 2, #5): DO NOT wipe Condition on every name lookup.
+      // The previous wipe (`conditionSelect.value = ""` + `selectedCondition = null`)
+      // erased the persisted/restored condition every time the user picked
+      // a new name candidate, which both broke the same-condition scan flow
+      // and caused a stray .needs-input flash on Condition. Preserve any
+      // existing value and proactively strip its needs-input highlight.
+      const _cond = $("conditionSelect");
+      if (_cond?.value) {
+        State.selectedCondition = _cond.value;
+        _cond.classList.remove("needs-input");
+      }
+      State.selectedCard = State.selectedPrinting = State.selectedSetName = State.selectedRarity = null;
 
       try {
         if (chosen.source === "manual" && typeof window.Lookup?.resolveNameFromScanNgrams === "function") {
@@ -120,8 +158,9 @@
         // the current selectedCard, so the safety-net path can reuse it.
         populateSetDropdown();
 
+        // v13.4 (Sprint 2, #6): rarity placeholder → "Rarity" (was "please select")
         const rarSel = $("raritySelect"); rarSel.innerHTML = "";
-        const ph2 = document.createElement("option"); ph2.value = ""; ph2.textContent = "please select"; ph2.disabled = true; rarSel.appendChild(ph2);
+        rarSel.appendChild(makePlaceholder("Rarity"));
         rarSel.value = "";
 
         status($("lookupStatus"), `Found ${candidates.length} match(es).`);
@@ -164,10 +203,13 @@
       State.selectedSetName = $("setSelect").value || null;
       const rarities = [...new Set((State.selectedCard?.sets||[]).filter(p=>p.set_name===State.selectedSetName).map(p=>p.set_rarity).filter(Boolean))];
       const rarSel = $("raritySelect"); rarSel.innerHTML = "";
-      const ph = document.createElement("option"); ph.value = ""; ph.textContent = "please select"; ph.disabled = true; rarSel.appendChild(ph);
+      // v13.4 (Sprint 2, #6): rarity placeholder → "Rarity"
+      rarSel.appendChild(makePlaceholder("Rarity"));
       rarities.forEach(r => { const o = document.createElement("option"); o.value = r; o.textContent = r; rarSel.appendChild(o); });
       rarSel.value = "";
-      State.selectedRarity = State.selectedPrinting = null; State.selectedCondition = null; $("conditionSelect").value = "";
+      State.selectedRarity = State.selectedPrinting = null;
+      // v13.4 (Sprint 2, #5): preserve Condition across set changes (same-condition workflow).
+      $("conditionSelect")?.classList.remove("needs-input");
       if (State.selectedSetName) $("setSelect")?.classList.remove("needs-input");
       status($("confirmPickStatus"), rarities.length ? "Select a rarity → condition, then enter quantity." : "No rarities found.");
       enableQtyIfReady();
@@ -178,7 +220,8 @@
       State.selectedPrinting = (State.selectedRarity && State.selectedSetName)
         ? (State.selectedCard?.sets||[]).find(p => p.set_name === State.selectedSetName && p.set_rarity === State.selectedRarity) || null
         : null;
-      State.selectedCondition = null; $("conditionSelect").value = "";
+      // v13.4 (Sprint 2, #5): preserve Condition across rarity changes (was being wiped).
+      $("conditionSelect")?.classList.remove("needs-input");
       if (State.selectedRarity) $("raritySelect")?.classList.remove("needs-input");
       status($("confirmPickStatus"), State.selectedPrinting ? "Pick a condition, then enter quantity." : "No printing found.");
       enableQtyIfReady();
