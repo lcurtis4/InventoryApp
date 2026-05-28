@@ -20,16 +20,14 @@
     try { const n = parseInt(val, 10); if (n >= 1) localStorage.setItem(LS_QTY_KEY, String(n)); } catch {}
   }
 
-  // Apply last-used condition to the select on page load
+  // v24 (#24): on fresh page load, show the unified "please select" placeholder
+  // for Condition (matching Set/Rarity) instead of auto-restoring last-used value.
+  // Persistence still happens on `change` so the user's last pick is saved —
+  // it just no longer pre-fills the field at startup. The user must actively
+  // choose a condition each session.
   function restoreCondition() {
     const sel = $("conditionSelect");
-    const last = loadPersistedCondition();
-    if (sel && last) {
-      // Find the matching option (value match)
-      for (const opt of Array.from(sel.options)) {
-        if (opt.value === last) { sel.value = last; break; }
-      }
-    }
+    if (sel) sel.value = "";
   }
 
   // Apply last-used quantity to the qty field on page load

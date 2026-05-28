@@ -115,10 +115,12 @@
             <div class="col">
               <label>Set:</label>
               <!-- v8.2: .needs-input added/removed by JS -->
-              <select id="setSelect"></select>
+              <!-- v24 (#24): unified placeholder "please select" across all dropdowns -->
+              <select id="setSelect"><option value="" disabled selected>please select</option></select>
               <br>
               <label>Rarity:</label>
-              <select id="raritySelect"></select>
+              <!-- v24 (#24): unified placeholder "please select" across all dropdowns -->
+              <select id="raritySelect"><option value="" disabled selected>please select</option></select>
             </div>
 
             <div class="col">

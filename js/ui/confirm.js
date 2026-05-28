@@ -295,17 +295,21 @@
     if (manualNameEl) manualNameEl.value = "";
     if (ocrNameEl)    ocrNameEl.value    = "";
 
-    // Restore qty from localStorage (v8.1 behaviour)
-    if (qtyEl) qtyEl.value = String(State.loadPersistedQty?.() ?? 1);
+    // v24 (#26): full form reset after successful post — match fresh-page-load state.
+    // Previously qty was restored from localStorage and Condition was preserved for the
+    // same-condition rapid-scan flow. After #24 unified placeholders to 'please select'
+    // on initial load, leaving Condition populated post-success read inconsistently.
+    // Now: qty resets to 1, Condition resets to placeholder, State.selectedCondition cleared.
+    if (qtyEl) qtyEl.value = "1";
 
     resetSelect(setSel);
     resetSelect(raritySel);
-    // Condition is intentionally preserved (user usually scans many cards of same condition)
+    resetSelect(conditionSel);
 
     State.selectedSetName   = null;
     State.selectedRarity    = null;
     State.selectedPrinting  = null;
-    // Note: State.selectedCondition is NOT cleared so persistent condition keeps working
+    State.selectedCondition = null;
 
     if (confirmBtn) confirmBtn.disabled = true;
     const ocrConf      = document.getElementById("ocrConf");      if (ocrConf)      ocrConf.textContent      = "accuracy: —";
