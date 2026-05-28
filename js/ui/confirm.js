@@ -1,4 +1,23 @@
-// js/ui/confirm.js — v10.2
+// js/ui/confirm.js — v13.4 (Sprint 1: success-modal polish)
+//
+// v13.4 changes (Sprint 1 — closes #3, #4, #20, #21, #22):
+//   • Issue #3 (v18 PRICE-OFF): no price line in the success modal markup.
+//     Apps Script price column on the Sheet remains untouched.
+//   • Issue #4: row-number references stripped from both the success modal
+//     body and the status line. Backend still receives + logs `result.row`.
+//   • Issue #20 (UAT follow-up): Recent Items table Price column removed.
+//     `appendToRecentGrid()` no longer emits a `<td class="price">` cell
+//     and the dedup-merge qty index moved from tds[5] → tds[5] (unchanged
+//     since Qty was column 6 — still index 5 — but cell count is now 7).
+//   • Issue #21 (UAT follow-up): redundant "Added as new row" /
+//     "Merged into existing row" inner banner removed. Modal title
+//     ("Added to Sheet") + the card details line are sufficient. Merge-
+//     vs-new signal moved inline into the card line as `(merged × N)`
+//     when a merge happens; otherwise unadorned.
+//   • Issue #22 (UAT follow-up): × close button removed from the success
+//     modal header (index.html). OK button + Esc + backdrop-click remain.
+//     Fallback handler in openSuccessModal() now uses optional chaining so
+//     the missing element doesn't throw.
 //
 // v10.2 changes:
 //   • validateRow() relaxed: name + condition + qty are now the ONLY required
@@ -121,9 +140,9 @@
       if (body) body.innerHTML = messageHtml || "Added.";
       m.classList.add("is-open");
       m.setAttribute("aria-hidden", "false");
-      // Wire close buttons manually in case modal.js init() didn't run
+      // Wire close button manually in case modal.js init() didn't run.
+      // v22: × button removed from header; OK is the only close affordance now.
       const closeOnce = () => closeSuccessModal();
-      m.querySelector(".modal__close")?.addEventListener("click", closeOnce, { once: true });
       m.querySelector(".modal__ok")?.addEventListener("click", closeOnce, { once: true });
     }
   }
@@ -247,6 +266,8 @@
     }
 
     const tr = document.createElement("tr");
+    // v20: Price cell removed. Columns are now
+    //   0:Name | 1:Set | 2:Code | 3:Rarity | 4:Condition | 5:Qty | 6:Sent?
     tr.innerHTML = `
       <td>${row.name}</td>
       <td>${row.set}</td>
@@ -254,7 +275,6 @@
       <td>${row.rarity}</td>
       <td>${row.condition}</td>
       <td>${row.qty}</td>
-      <td class="price">—</td>
       <td>✅</td>`;
     gridBody.prepend(tr);
   }
@@ -357,26 +377,33 @@
       try { State.savePersistedQty?.(row.qty);                   } catch (_) {}
 
       // Show success modal — v8.2 fix: uses modal.js.open() → adds .is-open correctly
-      // v10: distinguish merged-into-existing vs newly-appended.
-      const rowSuffix = result.row ? ` <span class="muted">— row ${result.row}</span>` : "";
-      const headline = isMerged
-        ? `<div class="merged-banner">➕ Merged into existing row (qty now <strong>${result.newQty}</strong>)</div>`
-        : `<div class="appended-banner">✅ Added as new row</div>`;
+      // v13.4 (#4): no row-number reference. Backend still returns result.row;
+      //             we just don't render it.
+      // v13.4 (#21): redundant "Added as new row" / "Merged into existing
+      //              row" banner removed. The modal title says "Added to
+      //              Sheet"; merge vs new is signaled inline on the card
+      //              line as `(merged × N)` when applicable.
+      // v13.4 (#3 — v18 PRICE-OFF):
+      //   Intentionally NO price line rendered in the success modal.
+      const mergeTag = isMerged
+        ? ` <span class="merge-tag">(merged × ${result.newQty})</span>`
+        : "";
       openSuccessModal(
-        `${headline}
-         <div><strong>${row.name}</strong> (${row.set}${row.code ? " • " + row.code : ""})${rowSuffix}</div>
+        `<div><strong>${row.name}</strong> (${row.set}${row.code ? " • " + row.code : ""})${mergeTag}</div>
          <div>Rarity: ${row.rarity} &bull; Condition: ${row.condition} &bull; Qty added: ${row.qty}</div>`
       );
 
       resetForm();
+      // v13.4 (Sprint 1, #4): drop row-N from status text. Keep merged-vs-new
+      // distinction since it's still useful UX signal about backend behavior.
       if (isMerged) {
         showStatus(
-          "✓ Merged into row " + (result.row || "?") + " (qty: " + result.newQty + "). Ready for next card.",
+          "✓ Merged into existing row (qty: " + result.newQty + "). Ready for next card.",
           "ok"
         );
       } else {
         showStatus(
-          "✓ Added to sheet (row " + (result.row || "?") + "). Ready for next card.",
+          "✓ Added to sheet. Ready for next card.",
           "ok"
         );
       }
@@ -418,5 +445,5 @@
 
   if (confirmBtn) confirmBtn.disabled = true;
 
-  // CONSOLE-OFF v12 console.log("[confirm] confirm.js initialized :: v10.2");
+  // CONSOLE-OFF v13.4 console.log("[confirm] confirm.js initialized :: v13.4");
 })();

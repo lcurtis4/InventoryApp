@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>YGO Scanner (v13.3)</title>
+  <title>YGO Scanner (v13.4)</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>YGO Scanner <span class="ver-badge">v13.3</span></h1>
+  <h1>YGO Scanner <span class="ver-badge">v13.4</span></h1>
   <div class="muted">Code-first scan: reads set code (bottom of card) + name simultaneously; image assist re-ranks candidates.</div>
 
   <div class="layout">
@@ -152,7 +152,7 @@
             <table id="grid">
               <thead>
                 <tr>
-                  <th>Name</th><th>Set</th><th>Code</th><th>Rarity</th><th>Condition</th><th>Qty</th><th>Price</th><th>Sent?</th>
+                  <th>Name</th><th>Set</th><th>Code</th><th>Rarity</th><th>Condition</th><th>Qty</th><th>Sent?</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -169,7 +169,7 @@
     <div class="modal__dialog" role="document" tabindex="-1">
       <div class="modal__header">
         <h3 class="modal__title">Added to Sheet</h3>
-        <button class="modal__close" aria-label="Close">×</button>
+        <!-- v22: × close button removed; OK button + Esc + backdrop-click are the close paths -->
       </div>
       <div class="modal__body" id="successModalBody"></div>
       <div class="modal__footer">

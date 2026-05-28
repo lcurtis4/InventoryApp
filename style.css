@@ -656,22 +656,10 @@ input:not(.needs-input) {
   color: #fff;
 }
 
-/* v10: merged / appended success-modal banners */
-.merged-banner {
-  background: #ecfeff;
-  border: 1px solid #06b6d4;
-  color: #0e7490;
-  padding: 8px 10px;
-  border-radius: 6px;
-  margin-bottom: 8px;
-  font-weight: 600;
-}
-.appended-banner {
-  background: #f0fdf4;
-  border: 1px solid #22c55e;
-  color: #166534;
-  padding: 8px 10px;
-  border-radius: 6px;
-  margin-bottom: 8px;
-  font-weight: 600;
+/* v13.4 (#21): legacy .merged-banner / .appended-banner removed.
+   Merge vs new is now communicated inline via the .merge-tag span. */
+.merge-tag {
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.95em;
 }
