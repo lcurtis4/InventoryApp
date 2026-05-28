@@ -62,6 +62,9 @@
 
   // v9.2: shared populate helper so safety-net path reuses identical logic
   // v13.4 (Sprint 2, #6): placeholder label is now "Set" (not "please select").
+  // v13.4 (#23): no trailing setSel.value="" — the disabled-selected placeholder
+  //   is already the chosen option; setting value="" was a no-op that could
+  //   visually blank the closed dropdown in some browsers.
   function populateSetDropdown() {
     const setSel = $("setSelect");
     if (!setSel) return;
@@ -73,7 +76,6 @@
       o.value = n; o.textContent = n;
       setSel.appendChild(o);
     });
-    setSel.value = "";
     if (sets.length > 0) setSel.classList.add("needs-input");
   }
 
@@ -159,9 +161,9 @@
         populateSetDropdown();
 
         // v13.4 (Sprint 2, #6): rarity placeholder → "Rarity" (was "please select")
+        // v13.4 (#23): no trailing rarSel.value="" — placeholder is already selected.
         const rarSel = $("raritySelect"); rarSel.innerHTML = "";
         rarSel.appendChild(makePlaceholder("Rarity"));
-        rarSel.value = "";
 
         status($("lookupStatus"), `Found ${candidates.length} match(es).`);
         status($("confirmPickStatus"), "Select set → rarity → condition, then enter quantity.");
@@ -204,9 +206,9 @@
       const rarities = [...new Set((State.selectedCard?.sets||[]).filter(p=>p.set_name===State.selectedSetName).map(p=>p.set_rarity).filter(Boolean))];
       const rarSel = $("raritySelect"); rarSel.innerHTML = "";
       // v13.4 (Sprint 2, #6): rarity placeholder → "Rarity"
+      // v13.4 (#23): no trailing rarSel.value="" — placeholder is already selected.
       rarSel.appendChild(makePlaceholder("Rarity"));
       rarities.forEach(r => { const o = document.createElement("option"); o.value = r; o.textContent = r; rarSel.appendChild(o); });
-      rarSel.value = "";
       State.selectedRarity = State.selectedPrinting = null;
       // v13.4 (Sprint 2, #5): preserve Condition across set changes (same-condition workflow).
       $("conditionSelect")?.classList.remove("needs-input");

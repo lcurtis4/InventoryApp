@@ -115,10 +115,12 @@
             <div class="col">
               <label>Set:</label>
               <!-- v8.2: .needs-input added/removed by JS -->
-              <select id="setSelect"></select>
+              <!-- v23: ship visible placeholder so the dropdown isn't empty pre-lookup -->
+              <select id="setSelect"><option value="" disabled selected>Set</option></select>
               <br>
               <label>Rarity:</label>
-              <select id="raritySelect"></select>
+              <!-- v23: ship visible placeholder so the dropdown isn't empty pre-lookup -->
+              <select id="raritySelect"><option value="" disabled selected>Rarity</option></select>
             </div>
 
             <div class="col">
