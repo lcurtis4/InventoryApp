@@ -160,10 +160,10 @@
         // the current selectedCard, so the safety-net path can reuse it.
         populateSetDropdown();
 
-        // v13.4 (Sprint 2, #6): rarity placeholder → "Rarity" (was "please select")
+        // v24 (#24): unified placeholder "please select" across all dropdowns.
         // v13.4 (#23): no trailing rarSel.value="" — placeholder is already selected.
         const rarSel = $("raritySelect"); rarSel.innerHTML = "";
-        rarSel.appendChild(makePlaceholder("Rarity"));
+        rarSel.appendChild(makePlaceholder("please select"));
 
         status($("lookupStatus"), `Found ${candidates.length} match(es).`);
         status($("confirmPickStatus"), "Select set → rarity → condition, then enter quantity.");
@@ -207,7 +207,7 @@
       const rarSel = $("raritySelect"); rarSel.innerHTML = "";
       // v13.4 (Sprint 2, #6): rarity placeholder → "Rarity"
       // v13.4 (#23): no trailing rarSel.value="" — placeholder is already selected.
-      rarSel.appendChild(makePlaceholder("Rarity"));
+      rarSel.appendChild(makePlaceholder("please select"));
       rarities.forEach(r => { const o = document.createElement("option"); o.value = r; o.textContent = r; rarSel.appendChild(o); });
       State.selectedRarity = State.selectedPrinting = null;
       // v13.4 (Sprint 2, #5): preserve Condition across set changes (same-condition workflow).
