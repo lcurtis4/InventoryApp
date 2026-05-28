@@ -82,6 +82,21 @@ GitHub's API doesn't let scripts create/configure views, so the five existing sl
 
 ---
 
+## 3.5. One-time setup: fix the "PR linked" automation
+
+GitHub's default project automation moves a linked issue to **In progress** when a PR mentioning it is opened. That conflicts with our convention (PR open = **In review**).
+
+**Fix it once in the UI:**
+
+1. Open [PM Board](https://github.com/users/lcurtis4/projects/1) → click **⋯** menu (top right) → **Workflows**
+2. Find **"Pull request linked to issue"**
+3. Change the target **Status** from `In progress` to `In review`
+4. Save
+
+This way, opening a PR auto-routes the issue to the correct lane.
+
+---
+
 ## 4. Workflow
 
 ### When a new bug/feature comes up
