@@ -13,10 +13,13 @@ Board: [PM Board (Project #1)](https://github.com/users/lcurtis4/projects/1)
 | **Backlog** | Unsorted ideas + epics not yet committed to a sprint. Triaged here first. |
 | **Ready** | Groomed: sized, prioritized, acceptance criteria written. Committed to the next sprint. |
 | **In progress** | Active sprint work + the epic for the sprint that is currently being delivered. |
+| **Blocked** ⛔ | Waiting on the PM (you) for input, decision, or unblocking. **Anything in here needs your attention.** |
 | **In review** | PR open, awaiting UAT or merge. |
 | **Done** | Merged to `main`. |
 
 **Rule of thumb:** Anything in `In progress` should have visible movement in the current sprint. If it stalls > 2 days, move it back to `Ready` and replace with something else.
+
+**Blocked policy:** When an assistant (e.g. me) needs an answer or decision from you before continuing a ticket, the ticket gets moved to `Blocked` and a comment is added explaining what's needed. **Daily action for the PM: check the Blocked column first thing.** Empty Blocked column = no decisions waiting on you.
 
 ---
 

@@ -181,6 +181,7 @@ def compute_progress(children):
     in_review = sum(1 for c in children if c["status"] == "In review")
     in_progress = sum(1 for c in children if c["status"] == "In progress")
     ready = sum(1 for c in children if c["status"] == "Ready")
+    blocked = sum(1 for c in children if c["status"] == "Blocked")
     backlog = sum(1 for c in children if c["status"] in (None, "Backlog"))
 
     if done == total:
@@ -194,6 +195,7 @@ def compute_progress(children):
     if done:        parts.append(f"{done} done")
     if in_review:   parts.append(f"{in_review} in review")
     if in_progress: parts.append(f"{in_progress} in progress")
+    if blocked:     parts.append(f"⚠️ {blocked} blocked")
     if ready:       parts.append(f"{ready} ready")
     if backlog:     parts.append(f"{backlog} backlog")
     breakdown = " · ".join(parts) if parts else "no status set"
@@ -222,6 +224,7 @@ def upsert_progress_block(body, pct, breakdown, children):
             "Done": "✅",
             "In review": "👀",
             "In progress": "🔨",
+            "Blocked": "⛔",
             "Ready": "📋",
             "Backlog": "📥",
         }.get(c["status"] or "Backlog", "·")
