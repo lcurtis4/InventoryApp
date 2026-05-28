@@ -165,8 +165,17 @@ h2 { font-size: var(--text-lg); font-weight: 600; line-height: 1.3; }
   margin: 0 0 var(--space-4);
 }
 
-/* Header collapses gracefully on narrow viewports */
-@media (max-width: 520px) {
+/* ====================================================================== */
+/* UI-10: Responsive breakpoint convention                                 */
+/* Two breakpoints, used everywhere below:                                 */
+/*   sm  — (max-width: 640px)   phone-portrait                            */
+/*   lg  — (min-width: 1024px)  desktop                                   */
+/* Tablet portrait (641–1023px) uses the same rules as desktop.            */
+/* Previously this file used 420/480/520/980/981 — all consolidated.       */
+/* ====================================================================== */
+
+/* sm: Header collapses gracefully on narrow viewports */
+@media (max-width: 640px) {
   .app-header__inner { height: 52px; }
   .app-brand__wordmark { font-size: var(--text-base); }
   .app-header .ver-badge { display: none; }
@@ -496,14 +505,14 @@ tbody td:last-child { text-align:center; }
   clip:rect(0,0,0,0); white-space:nowrap; border:0;
 }
 
-/* Responsive: stack on small screens */
-@media (max-width: 980px) {
+/* UI-10: stack layout below desktop (was: max-width 980px) */
+@media (max-width: 1023px) {
   .layout { grid-template-columns: 1fr; }
-  :root { --cam-w: 100%; }          /* camera fills card on mobile */
+  :root { --cam-w: 100%; }          /* camera fills card on tablet+phone */
 }
 
-/* On very small screens, let the two buttons expand full width */
-@media (max-width: 520px) {
+/* sm: let the two scanner buttons expand full width (was: max-width 520px) */
+@media (max-width: 640px) {
   #startBtn, #scanToggleBtn {
     inline-size: 100%;
     flex: 1 1 auto;
@@ -575,8 +584,8 @@ tbody td:last-child { text-align:center; }
   padding: 6px 12px;
 }
 
-/* Stack on small screens */
-@media (max-width: 480px) {
+/* sm: stack capture-confirm-bar (was: max-width 480px) */
+@media (max-width: 640px) {
   .capture-confirm-bar { flex-direction: column; align-items: center; gap: 10px; }
   .ccb-art { width: 100px; height: 146px; }
   .ccb-info { width: 100%; }
@@ -641,8 +650,8 @@ tbody td:last-child { text-align:center; }
   gap:8px;
 }
 
-/* Constrain overall page width on big screens */
-@media (min-width: 981px) {
+/* lg: constrain overall page width on desktop (was: min-width 981px) */
+@media (min-width: 1024px) {
   body { max-width: 1200px; margin: 16px auto; }
   .layout { grid-template-columns: minmax(340px, 560px) 1fr; column-gap: 24px; }
   .left-col .panel { max-width: 560px; margin-inline: auto; }
@@ -679,8 +688,8 @@ tbody td:last-child { text-align:center; }
 /* #codeConfirmModal .btn / .btn-primary / .btn-secondary now alias the
    unified UI-5 button system above. No mode-specific declarations here. */
 
-/* Small screens — slightly tighter radius */
-@media (max-width: 420px) {
+/* sm: slightly tighter modal radius (was: max-width 420px) */
+@media (max-width: 640px) {
   .modal__dialog,
   #codeConfirmModal .modal-content {
     width: 94vw;
@@ -751,8 +760,8 @@ tbody td:last-child { text-align:center; }
   letter-spacing: 0.04em;
 }
 
-/* Stack vertically on small screens */
-@media (max-width: 480px) {
+/* sm: stack .cc-card vertically (was: max-width 480px) */
+@media (max-width: 640px) {
   .cc-card { flex-direction: column; align-items: center; gap: 10px; }
   .cc-art  { width: 120px; height: 175px; }
   .cc-info { width: 100%; }
@@ -846,8 +855,8 @@ tbody td:last-child { text-align:center; }
   font-size: var(--text-sm);
 }
 
-/* On very small screens, stack candidates vertically */
-@media (max-width: 420px) {
+/* sm: stack candidates vertically (was: max-width 420px) */
+@media (max-width: 640px) {
   .cand-list { flex-direction: column; }
   .cand-card { max-width: 100%; flex: 1 1 auto; flex-direction: row; }
   .cand-img  { width: 48px; height: 66px; flex-shrink: 0; }
