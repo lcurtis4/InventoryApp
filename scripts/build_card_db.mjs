@@ -36,7 +36,7 @@
 //
 // No external dependencies — Node 18+ (global fetch, crypto, fs/promises).
 
-import { writeFile, readFile, mkdir } from 'node:fs/promises';
+import { writeFile, readFile, mkdir, rename } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,6 +55,8 @@ function parseArgs(argv) {
   return args;
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function loadRawCards(inPath) {
   if (inPath) {
     console.log(`[build] reading local API dump: ${inPath}`);
@@ -63,12 +65,30 @@ async function loadRawCards(inPath) {
     return Array.isArray(json?.data) ? json.data : (Array.isArray(json) ? json : []);
   }
   console.log(`[build] fetching full card DB from ${API_URL} ...`);
-  const res = await fetch(API_URL);
-  if (!res.ok) throw new Error(`YGOPRODeck HTTP ${res.status}`);
-  const json = await res.json();
-  const list = Array.isArray(json?.data) ? json.data : [];
-  console.log(`[build] fetched ${list.length} raw cards`);
-  return list;
+  // Retry with exponential backoff — a single flaky fetch must not fail the
+  // weekly refresh (#52). On total failure we throw and main() exits non-zero,
+  // which (combined with atomic publish below) leaves the last-good snapshot
+  // untouched.
+  const MAX_ATTEMPTS = 4;
+  let lastErr = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(API_URL);
+      if (!res.ok) throw new Error(`YGOPRODeck HTTP ${res.status}`);
+      const json = await res.json();
+      const list = Array.isArray(json?.data) ? json.data : [];
+      console.log(`[build] fetched ${list.length} raw cards (attempt ${attempt})`);
+      return list;
+    } catch (e) {
+      lastErr = e;
+      if (attempt < MAX_ATTEMPTS) {
+        const backoff = 500 * Math.pow(2, attempt - 1); // 500, 1000, 2000 ms
+        console.warn(`[build] fetch attempt ${attempt} failed (${e.message}); retrying in ${backoff}ms`);
+        await sleep(backoff);
+      }
+    }
+  }
+  throw new Error(`YGOPRODeck fetch failed after ${MAX_ATTEMPTS} attempts: ${lastErr && lastErr.message}`);
 }
 
 // Transform the verbose API record into our compact local schema.
@@ -105,6 +125,14 @@ function toCompact(raw) {
 
 function utcDateStamp(d = new Date()) {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+
+// Write to a sibling .tmp file then rename() into place. rename() is atomic on
+// the same filesystem, so readers never observe a half-written file (#52).
+async function writeFileAtomic(path, contents) {
+  const tmp = `${path}.tmp`;
+  await writeFile(tmp, contents, 'utf8');
+  await rename(tmp, path);
 }
 
 // Content hash of the card payload ONLY (excludes version/builtAt) so we can
@@ -195,9 +223,11 @@ async function main() {
 
   const snapshot = { schema: 1, version, builtAt, count: cards.length, cards };
   const body = JSON.stringify(snapshot);
+  // sha256 is computed over the EXACT bytes written to the snapshot file
+  // (`body`). The client (js/lookup/cardDb.js) hashes the raw fetched text of
+  // this same file, so the two digests must match byte-for-byte (#52).
   const sha256 = createHash('sha256').update(body).digest('hex');
   const snapshotName = `cards-${version}.json`;
-  await writeFile(join(args.out, snapshotName), body, 'utf8');
 
   // Emit a small diff/patch sidecar so the client can apply only changes
   // (#51: "avoid full re-download when incremental update is possible").
@@ -211,7 +241,7 @@ async function main() {
     removed: diff.removed, // names only — client deletes by key
   };
   const patchName = `cards-diff-${version}.json`;
-  await writeFile(join(args.out, patchName), JSON.stringify(patch), 'utf8');
+  const patchBody = JSON.stringify(patch);
 
   const manifest = {
     schema: 1,
@@ -223,7 +253,18 @@ async function main() {
     // Incremental-apply hint for the client (#51).
     diff: previous ? { fromVersion: previous.manifest.version, patch: patchName } : null,
   };
-  await writeFile(join(args.out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+  const manifestBody = JSON.stringify(manifest, null, 2) + '\n';
+
+  // ── ATOMIC PUBLISH (#52) ─────────────────────────────────────────────────
+  // Write the snapshot and patch to .tmp files, rename() them into place, and
+  // write manifest.json LAST. rename() is atomic on the same filesystem, so a
+  // crash mid-publish can never leave a partial snapshot referenced by the
+  // manifest — readers either see the old, fully-consistent set of files or
+  // the new one. Because the manifest (which carries the version + sha256 the
+  // client keys off) lands last, the last-good DB is never corrupted.
+  await writeFileAtomic(join(args.out, snapshotName), body);
+  await writeFileAtomic(join(args.out, patchName), patchBody);
+  await writeFileAtomic(join(args.out, 'manifest.json'), manifestBody);
 
   await appendChangelog(args.out, version, diff, cards.length);
 

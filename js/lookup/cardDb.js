@@ -22,12 +22,20 @@
 //   await CardDb.findBest(query,{minScore})→ { id, name, sets[], score } | null (fuzzy)
 //   CardDb.version()                      → snapshot version string ("" until ready)
 //   CardDb.count()                        → number of cards loaded
-//   await CardDb.forceReload()            → wipe + reload from snapshot
+//   await CardDb.forceReload()            → re-pull + re-import (last-good safe)
+//   await CardDb.refreshState()           → { lastSuccessAt, lastSuccessVersion,
+//                                             lastFailureAt, lastFailureReason,
+//                                             lastFailureVersion } (#52/#53)
 //
 // DESIGN NOTES
 //   • Idempotent load: we store the loaded manifest version in meta; if the
 //     shipped/remote snapshot version matches what's already in IndexedDB we
 //     skip the (expensive) re-import. #51 will use this to apply weekly diffs.
+//   • Integrity + last-good fallback (#52): before applying a downloaded
+//     snapshot we SHA-256 the exact response bytes and compare to
+//     manifest.sha256. On mismatch (or any import error) we abort WITHOUT
+//     touching the cards store — the last-good data keeps serving — and record
+//     a failure entry in the 'state' meta record for the UI (#53) to surface.
 //   • Fuzzy matching reuses normalize.js if present, else a small Levenshtein.
 
 (function () {
@@ -38,6 +46,10 @@
   const STORE_CARDS = 'cards';
   const STORE_META = 'meta';
   const META_KEY = 'manifest';
+  // Separate meta record for refresh health (#52/#53). Kept distinct from the
+  // 'manifest' record so a FAILED refresh never overwrites the last-good
+  // manifest that describes the data actually sitting in the cards store.
+  const META_KEY_STATE = 'state';
 
   const CFG = window.APP_CONFIG || {};
   // Where the snapshot + manifest live. Local folder by default; a CDN base can
@@ -133,17 +145,71 @@
     await _reqAsync(_tx(db, STORE_META, 'readwrite').put({ k: META_KEY, ...manifest }));
   }
 
+  // ---- refresh health state (#52/#53) ---------------------------------------
+  async function _getState(db) {
+    try { return await _reqAsync(_tx(db, STORE_META, 'readonly').get(META_KEY_STATE)); }
+    catch { return null; }
+  }
+  // Merge-and-persist the health record so a success update keeps the prior
+  // failure fields (and vice-versa) for #53 to surface.
+  async function _patchState(db, fields) {
+    const prev = (await _getState(db)) || {};
+    const next = { ...prev, ...fields, k: META_KEY_STATE };
+    await _reqAsync(_tx(db, STORE_META, 'readwrite').put(next));
+    return next;
+  }
+  async function _recordFailure(db, reason, version) {
+    try {
+      await _patchState(db, {
+        lastFailureAt: new Date().toISOString(),
+        lastFailureReason: String(reason || 'unknown'),
+        lastFailureVersion: version || null,
+      });
+    } catch (e) {
+      console.warn('[cardDb] could not record failure state:', e && e.message);
+    }
+  }
+  async function _recordSuccess(db, version) {
+    try {
+      await _patchState(db, {
+        lastSuccessAt: new Date().toISOString(),
+        lastSuccessVersion: version || null,
+      });
+    } catch (e) {
+      console.warn('[cardDb] could not record success state:', e && e.message);
+    }
+  }
+
+  // ---- integrity (#52) -------------------------------------------------------
+  // SHA-256 of the EXACT response text, hex-encoded — mirrors the build
+  // script's `createHash('sha256').update(body)` over the same snapshot bytes.
+  async function _sha256Hex(text) {
+    const subtle = (window.crypto && window.crypto.subtle) || null;
+    if (!subtle) throw new Error('SubtleCrypto unavailable — cannot verify snapshot integrity');
+    const bytes = new TextEncoder().encode(text);
+    const digest = await subtle.digest('SHA-256', bytes);
+    const view = new Uint8Array(digest);
+    let hex = '';
+    for (let i = 0; i < view.length; i++) hex += view[i].toString(16).padStart(2, '0');
+    return hex;
+  }
+
   // ---- snapshot fetch --------------------------------------------------------
-  async function _getJson(url, timeoutMs = 15000) {
+  async function _getText(url, timeoutMs = 15000) {
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
       const res = await fetch(url, { signal: ctrl.signal, cache: 'no-cache' });
       if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-      return await res.json();
+      return await res.text();
     } finally {
       clearTimeout(to);
     }
+  }
+  async function _getJson(url, timeoutMs = 15000) {
+    // Parse from text (not res.json()) so the same code path can hash the exact
+    // bytes when integrity verification is needed (#52).
+    return JSON.parse(await _getText(url, timeoutMs));
   }
 
   // ---- in-memory state -------------------------------------------------------
@@ -162,7 +228,24 @@
 
   async function _importSnapshot(db, manifest) {
     const snapUrl = BASE + (manifest.snapshot || `cards-${manifest.version}.json`);
-    const snap = await _getJson(snapUrl);
+    // Fetch the RAW text first so we can verify integrity over the exact bytes
+    // before touching IndexedDB (#52). Nothing is written until the hash checks
+    // out, so a corrupt download leaves the last-good data fully intact.
+    const text = await _getText(snapUrl);
+    if (manifest.sha256) {
+      const actual = await _sha256Hex(text);
+      if (actual !== String(manifest.sha256).toLowerCase()) {
+        const err = new Error(
+          `snapshot integrity check failed (expected ${String(manifest.sha256).slice(0, 12)}…, ` +
+          `got ${actual.slice(0, 12)}…)`
+        );
+        err.integrity = true;
+        throw err;
+      }
+    } else {
+      console.warn('[cardDb] manifest has no sha256 — skipping integrity verification');
+    }
+    const snap = JSON.parse(text);
     const cards = Array.isArray(snap?.cards) ? snap.cards : [];
     if (!cards.length) throw new Error('snapshot contained no cards');
     await _bulkPut(db, cards);
@@ -216,8 +299,9 @@
     return { version: patch.toVersion, builtAt: patch.builtAt, count: newCount };
   }
 
-  function ready() {
-    if (_readyPromise) return _readyPromise;
+  function ready(opts) {
+    const force = !!(opts && opts.force);
+    if (_readyPromise && !force) return _readyPromise;
     _readyPromise = (async () => {
       const db = await _openDb();
 
@@ -235,7 +319,11 @@
       const storedVersion = stored && stored.version;
       const wantVersion = manifest && manifest.version;
 
-      if (storedVersion && (!wantVersion || storedVersion === wantVersion)) {
+      // On a forced reload we re-pull from the snapshot even if the version
+      // matches — but via the import path below, whose _bulkPut atomically
+      // replaces the store ONLY after integrity passes. The last-good data is
+      // never pre-wiped, so a corrupt forced reload can't lose it (#52).
+      if (!force && storedVersion && (!wantVersion || storedVersion === wantVersion)) {
         // Already current (or no manifest reachable) → serve what we have.
         _meta = { version: stored.version, builtAt: stored.builtAt, count: stored.count };
         await _loadNameIndex(db);
@@ -255,6 +343,7 @@
           try {
             const res = await _applyDiff(db, manifest, stored.count);
             _meta = { version: res.version, builtAt: res.builtAt, count: res.count };
+            await _recordSuccess(db, res.version);
             await _loadNameIndex(db);
             console.log('[cardDb] ready (incremental) —', _meta.count, 'cards, v=' + _meta.version);
             return { ...(_meta) };
@@ -268,11 +357,16 @@
         try {
           const res = await _importSnapshot(db, manifest);
           _meta = { version: res.version, builtAt: res.builtAt, count: res.count };
+          await _recordSuccess(db, res.version);
           await _loadNameIndex(db);
           console.log('[cardDb] ready (imported) —', _meta.count, 'cards, v=' + _meta.version);
           return { ...(_meta) };
         } catch (e) {
+          // A failed/corrupt refresh must NEVER wipe the last-good data (#52).
+          // _importSnapshot writes nothing until integrity passes, so the cards
+          // store is untouched here. Record the failure for #53 to surface.
           console.warn('[cardDb] import failed:', e.message);
+          await _recordFailure(db, e.message, wantVersion);
           // Fall through: if we have ANY stored data, keep serving it.
           if (storedVersion) {
             _meta = { version: stored.version, builtAt: stored.builtAt, count: stored.count };
@@ -281,6 +375,15 @@
             return { ...(_meta) };
           }
         }
+      }
+
+      // Manifest unreachable (e.g. forced reload while offline) but we still
+      // have stored data → keep serving the last-good DB (#52).
+      if (storedVersion) {
+        _meta = { version: stored.version, builtAt: stored.builtAt, count: stored.count };
+        await _loadNameIndex(db);
+        console.log('[cardDb] manifest unavailable; serving last-good v=' + _meta.version);
+        return { ...(_meta) };
       }
 
       // No manifest and no stored data → empty store (lookups return null).
@@ -336,20 +439,24 @@
   function builtAt() { return _meta.builtAt || ''; }
   function count() { return _meta.count || 0; }
 
-  async function forceReload() {
-    _readyPromise = null;
+  // Refresh health record for #53's UI (lastSuccessAt/Version,
+  // lastFailureAt/Reason/Version). Returns {} when nothing recorded yet.
+  async function refreshState() {
     const db = await _openDb();
-    await _reqAsync(_tx(db, STORE_META, 'readwrite').delete(META_KEY));
-    await new Promise((resolve, reject) => {
-      const t = db.transaction(STORE_CARDS, 'readwrite');
-      t.objectStore(STORE_CARDS).clear();
-      t.oncomplete = () => resolve();
-      t.onerror = () => reject(t.error);
-    });
-    _namesLower = []; _loaded = false;
-    _meta = { version: '', builtAt: '', count: 0 };
-    return ready();
+    const s = await _getState(db);
+    if (!s) return {};
+    const { k, ...rest } = s;
+    return rest;
   }
 
-  window.CardDb = { ready, lookupByName, findBest, version, builtAt, count, forceReload };
+  // Re-pull and re-import from the snapshot. Does NOT pre-wipe the store: the
+  // re-import goes through _bulkPut, which clears + repopulates inside ONE
+  // transaction only after the snapshot passes its sha256 integrity check. So a
+  // corrupt or failed forced reload leaves the last-good data fully intact (#52).
+  async function forceReload() {
+    _namesLower = []; _loaded = false;
+    return ready({ force: true });
+  }
+
+  window.CardDb = { ready, lookupByName, findBest, version, builtAt, count, forceReload, refreshState };
 })();

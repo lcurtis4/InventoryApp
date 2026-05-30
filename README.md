@@ -363,6 +363,35 @@ On the client, `CardDb.ready()` compares the stored version to the manifest:
 The committed baseline snapshot has `diff: null` (no prior version); the first
 diff is produced by the next weekly run.
 
+### Refresh failure handling & last-good fallback (DB-3 — #52)
+
+A failed or corrupt weekly refresh must **never** corrupt or wipe the user's
+locally-stored card DB — the app always keeps the last-good data.
+
+- **Integrity verification.** `manifest.json` carries a `sha256` computed by the
+  build over the exact bytes of `cards-<version>.json`. Before applying a
+  downloaded snapshot, `CardDb` fetches the snapshot as raw text, hashes it with
+  the browser **SubtleCrypto** API (`crypto.subtle.digest('SHA-256', …)`), and
+  compares hex digests. The build (`createHash('sha256').update(body)`) and the
+  client hash the **identical UTF-8 bytes**, so the digests match exactly.
+- **Last-good fallback.** Nothing is written to IndexedDB until the hash checks
+  out. On a mismatch (or any fetch/parse/import error) the update is **aborted**
+  and the existing data keeps serving. The replace itself happens in a single
+  IndexedDB transaction (`clear()` + `put()` inside one `_bulkPut`), so it is
+  atomic — a mid-import abort rolls back and the prior data survives.
+  `CardDb.forceReload()` likewise never pre-wipes the store.
+- **Failure/success state.** A separate `meta` record (`k: "state"`) tracks
+  `{ lastSuccessAt, lastSuccessVersion, lastFailureAt, lastFailureReason,
+  lastFailureVersion }`. A failed refresh records the failure **without**
+  overwriting the last-good `manifest` record; `CardDb.refreshState()` exposes
+  this for the UI surfacing planned in #53.
+- **Atomic publish (build side).** The build writes `cards-<version>.json` and
+  the diff sidecar to `.tmp` files, `rename()`s them into place, and writes
+  `manifest.json` **last** — so a crash mid-publish can't leave the manifest
+  pointing at a partial snapshot. `loadRawCards` also retries the upstream API
+  with exponential backoff (4 attempts) so a single flaky fetch doesn't fail the
+  weekly run.
+
 ---
 
 ## Troubleshooting
