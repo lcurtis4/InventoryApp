@@ -5,7 +5,14 @@ window.APP_CONFIG = {
   SHEETS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbzldsPIOgeU2HMlAd8zBSk3sjErQntCcyJ3tdeq69yrH2P2KDMKf1zyV68VbudQhzkjgA/exec",
   SECRET: "0104200206121997",
   AUTO_START_CAMERA: true,
-  DEBUG_OPEN_DEFAULT: true
+  DEBUG_OPEN_DEFAULT: true,
+
+  // ── Image-recognition backend (spike #56) ─────────────────────────────────
+  // Server-side visual card recognition endpoint (see server/imageRecognition).
+  // DISABLED by default: leave empty so production behavior is unchanged and the
+  // scanner keeps using the existing text-only score. To enable the spike, point
+  // this at a running backend, e.g. "http://127.0.0.1:8787/score".
+  IMAGE_RECOGNITION_URL: ""
 };
 
 // ── v8.2 runtime tuning (paste into DevTools console to adjust live) ─────────

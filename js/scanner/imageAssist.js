@@ -75,6 +75,10 @@
   // Thumbnail fetch timeout
   const THUMB_TIMEOUT_MS = 4000;
 
+  // Backend (spike #56) request timeout. Kept short so a slow/unreachable
+  // backend never stalls the scan loop — on timeout we fall back to text-only.
+  const BACKEND_TIMEOUT_MS = 4000;
+
   // ── Canvas helpers ───────────────────────────────────────────────────────────
   const ctx2d = (c) => c && c.getContext && c.getContext("2d", { willReadFrequently: true });
 
@@ -229,6 +233,52 @@
       .sort((a, b) => b.blendedScore - a.blendedScore);
   }
 
+  // ── Default backend hook (spike #56) ─────────────────────────────────────────
+  // Server-side visual recognition. The browser CANNOT read YGOPRODeck art
+  // pixels (no Access-Control-Allow-Origin → CORS net::ERR_FAILED, see #27), so
+  // this posts the art crop + candidate list to a small backend that fetches
+  // each candidate's art server-side, computes an aHash imgScore, and returns a
+  // blendedScore. See server/imageRecognition.
+  //
+  // Contract (matches the documented backendHook signature):
+  //   async (artCropDataURL: string, candidates: object[]) => object[] | null
+  // Returns the candidates annotated with imgScore + blendedScore (sorted), or
+  // null on ANY failure so scoreVisually() falls back to the text-only path.
+  //
+  // GRACEFUL FALLBACK is the whole point: every error path returns null and
+  // emits no console noise. The browser never touches cross-origin image pixels.
+  function makeBackendHook(endpointUrl) {
+    return async function backendHook(artCropDataURL, candidates) {
+      if (!endpointUrl || !artCropDataURL || !Array.isArray(candidates) || !candidates.length) {
+        return null;
+      }
+      const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const timer = ctrl ? setTimeout(() => ctrl.abort(), BACKEND_TIMEOUT_MS) : null;
+      try {
+        const res = await fetch(endpointUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ artDataUrl: artCropDataURL, candidates }),
+          signal: ctrl ? ctrl.signal : undefined,
+        });
+        if (!res || !res.ok) return null;
+        const json = await res.json();
+        const out = json && Array.isArray(json.candidates) ? json.candidates : null;
+        return out && out.length ? out : null;
+      } catch (_e) {
+        // Unreachable / timeout / parse error → silent fallback to text-only.
+        return null;
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+  }
+
+  // Install the default hook ONLY when a backend URL is configured, so the
+  // production default (no backend) leaves backendHook === null and behavior
+  // unchanged. scoreVisually() already guards on `typeof backendHook === function`.
+  const _cfgUrl = (window.APP_CONFIG && window.APP_CONFIG.IMAGE_RECOGNITION_URL) || "";
+
   // ── Public API ───────────────────────────────────────────────────────────────
   const ImageAssist = {
     scoreVisually,
@@ -237,7 +287,13 @@
     // Backend hook: replace this to plug in a server-side vision model.
     // Signature: async (artCropDataURL: string, candidates: object[]) => object[]
     // The returned array must include an `imgScore` (0–1) and `blendedScore` field.
-    backendHook: null,
+    // Auto-wired to the configured backend (spike #56) when APP_CONFIG
+    // .IMAGE_RECOGNITION_URL is set; otherwise null (text-only, unchanged).
+    backendHook: _cfgUrl ? makeBackendHook(_cfgUrl) : null,
+
+    // Factory exposed so a backend can be wired at runtime from DevTools:
+    //   window.ImageAssist.backendHook = window.ImageAssist.makeBackendHook(url)
+    makeBackendHook,
 
     // Expose constants for user tuning
     ART_REGION,
