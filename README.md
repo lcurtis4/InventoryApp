@@ -339,8 +339,29 @@ node scripts/build_card_db.mjs              # fetch live + write snapshot + mani
 node scripts/build_card_db.mjs --in dump.json   # build from a saved API dump
 ```
 
-The weekly auto-refresh (#51) re-runs this build and bumps the manifest version;
-`CardDb.ready()` then imports the new snapshot on next load.
+### Weekly auto-refresh (DB-2 — #51)
+
+`.github/workflows/card-db-refresh.yml` runs the build **every Monday 08:00 UTC**
+(and on-demand via the Actions tab). The build:
+
+- **Diffs** the freshly-fetched dataset against the committed snapshot.
+- If **nothing changed**, it emits `::no-changes::` and the workflow commits
+  nothing — no churn.
+- If anything changed, it writes a new `cards-<version>.json`, a
+  `cards-diff-<version>.json` **patch sidecar** (added / updated / removed),
+  appends `snapshots/CHANGELOG.md`, updates `manifest.json` (now carrying a
+  `diff: { fromVersion, patch }` hint), and the workflow commits the result.
+
+On the client, `CardDb.ready()` compares the stored version to the manifest:
+
+- Same version → serve cache (no work).
+- Manifest ships a `diff` whose `fromVersion` matches the stored version →
+  **apply only the changed records** to IndexedDB (add/update/delete) — no full
+  re-download.
+- Otherwise (first run, or skipped several versions) → full snapshot import.
+
+The committed baseline snapshot has `diff: null` (no prior version); the first
+diff is produced by the next weekly run.
 
 ---
 

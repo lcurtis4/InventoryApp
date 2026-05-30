@@ -1,0 +1,55 @@
+name: Card DB Weekly Refresh
+
+# DB-2 (#51): rebuild the local card DB snapshot once per week and commit it
+# only when the dataset actually changed. The client (cardDb.js) then applies
+# the new snapshot — incrementally via the diff sidecar when possible.
+
+on:
+  schedule:
+    # Mondays 08:00 UTC. Cron is in UTC; adjust if the cadence needs to shift.
+    - cron: "0 8 * * 1"
+  workflow_dispatch: # allow manual refresh from the Actions tab
+
+permissions:
+  contents: write # needs to commit the refreshed snapshot back to the repo
+
+concurrency:
+  group: card-db-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Rebuild card DB snapshot (diff vs current)
+        id: build
+        run: |
+          set -o pipefail
+          node scripts/build_card_db.mjs | tee build.log
+          if grep -q "::changed::" build.log; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit refreshed snapshot
+        if: steps.build.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add snapshots/
+          VERSION=$(node -p "require('./snapshots/manifest.json').version")
+          git commit -m "chore(db): weekly card DB refresh ${VERSION} (#51)"
+          git push
+
+      - name: Report no-op
+        if: steps.build.outputs.changed != 'true'
+        run: echo "No card changes this week — snapshot unchanged, nothing committed."

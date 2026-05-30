@@ -175,6 +175,47 @@
     return { version: snap.version, builtAt: snap.builtAt, count: cards.length };
   }
 
+  // DB-2 (#51): apply ONLY changed records from a diff patch, avoiding a full
+  // re-download/import. Used when the stored version matches the patch's
+  // fromVersion. Returns the new total count, or throws to let the caller fall
+  // back to a full import.
+  async function _applyDiff(db, manifest, storedCount) {
+    const d = manifest.diff;
+    if (!d || !d.patch) throw new Error('no diff patch in manifest');
+    const patch = await _getJson(BASE + d.patch);
+    const added = Array.isArray(patch?.added) ? patch.added : [];
+    const updated = Array.isArray(patch?.updated) ? patch.updated : [];
+    const removed = Array.isArray(patch?.removed) ? patch.removed : [];
+
+    await new Promise((resolve, reject) => {
+      const t = db.transaction(STORE_CARDS, 'readwrite');
+      const store = t.objectStore(STORE_CARDS);
+      t.oncomplete = () => resolve(true);
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error || new Error('tx aborted'));
+      const putRec = (c) => store.put({
+        nameLower: String(c.name || '').toLowerCase(),
+        id: c.id ?? null,
+        name: c.name,
+        sets: Array.isArray(c.sets) ? c.sets : [],
+      });
+      for (const c of added) putRec(c);
+      for (const c of updated) putRec(c);
+      for (const name of removed) store.delete(String(name || '').toLowerCase());
+    });
+
+    const newCount = (storedCount || 0) + added.length - removed.length;
+    await _setMeta(db, {
+      version: patch.toVersion || manifest.version || '',
+      builtAt: patch.builtAt || manifest.builtAt || '',
+      count: newCount,
+      sha256: manifest.sha256 || '',
+    });
+    console.log('[cardDb] diff applied — +' + added.length + ' ~' + updated.length +
+                ' -' + removed.length + ', now ' + newCount + ' cards');
+    return { version: patch.toVersion, builtAt: patch.builtAt, count: newCount };
+  }
+
   function ready() {
     if (_readyPromise) return _readyPromise;
     _readyPromise = (async () => {
@@ -203,7 +244,27 @@
       }
 
       if (wantVersion) {
-        // Fresh import (first run) or version changed → import snapshot.
+        // DB-2 (#51): if we already have data AND the manifest ships a diff
+        // patch FROM our stored version, apply only the changed records.
+        if (
+          storedVersion &&
+          manifest.diff &&
+          manifest.diff.fromVersion === storedVersion &&
+          manifest.diff.patch
+        ) {
+          try {
+            const res = await _applyDiff(db, manifest, stored.count);
+            _meta = { version: res.version, builtAt: res.builtAt, count: res.count };
+            await _loadNameIndex(db);
+            console.log('[cardDb] ready (incremental) —', _meta.count, 'cards, v=' + _meta.version);
+            return { ...(_meta) };
+          } catch (e) {
+            console.warn('[cardDb] diff apply failed; falling back to full import:', e.message);
+          }
+        }
+
+        // Fresh import (first run), version skipped ahead, or diff failed →
+        // full snapshot import.
         try {
           const res = await _importSnapshot(db, manifest);
           _meta = { version: res.version, builtAt: res.builtAt, count: res.count };

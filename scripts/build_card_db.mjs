@@ -107,6 +107,65 @@ function utcDateStamp(d = new Date()) {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
+// Content hash of the card payload ONLY (excludes version/builtAt) so we can
+// detect "nothing actually changed" runs and skip publishing a new version.
+function contentHash(cards) {
+  return createHash('sha256').update(JSON.stringify(cards)).digest('hex');
+}
+
+// Load the previously-published snapshot via the manifest, if any.
+async function loadPrevious(outDir) {
+  try {
+    const manifest = JSON.parse(await readFile(join(outDir, 'manifest.json'), 'utf8'));
+    if (!manifest || !manifest.snapshot) return null;
+    const snap = JSON.parse(await readFile(join(outDir, manifest.snapshot), 'utf8'));
+    return { manifest, snap };
+  } catch {
+    return null; // first build / no prior snapshot
+  }
+}
+
+// Compute a record-level diff between the previous and next card arrays.
+// Returns { added:[names], removed:[names], updated:[names], changed:bool }.
+// "updated" = same name, but id or printings differ.
+function diffCards(prevCards, nextCards) {
+  const prev = new Map((prevCards || []).map((c) => [c.name.toLowerCase(), c]));
+  const next = new Map((nextCards || []).map((c) => [c.name.toLowerCase(), c]));
+  const added = [], removed = [], updated = [];
+  const printKey = (c) =>
+    (c.sets || []).map((s) => `${s.set_name}|${s.set_code}|${s.set_rarity}`).sort().join('~');
+
+  for (const [k, c] of next) {
+    if (!prev.has(k)) { added.push(c.name); continue; }
+    const p = prev.get(k);
+    if ((p.id ?? null) !== (c.id ?? null) || printKey(p) !== printKey(c)) updated.push(c.name);
+  }
+  for (const [k, c] of prev) {
+    if (!next.has(k)) removed.push(c.name);
+  }
+  added.sort(); removed.sort(); updated.sort();
+  return { added, removed, updated, changed: !!(added.length || removed.length || updated.length) };
+}
+
+async function appendChangelog(outDir, version, diff, count) {
+  const path = join(outDir, 'CHANGELOG.md');
+  let prior = '';
+  try { prior = await readFile(path, 'utf8'); } catch {}
+  const head = prior ? prior : '# Card DB snapshot changelog\n\n';
+  const entry =
+    `## ${version}\n` +
+    `- Total cards: **${count}**\n` +
+    `- Added: **${diff.added.length}**, Updated: **${diff.updated.length}**, Removed: **${diff.removed.length}**\n` +
+    (diff.added.length ? `  - New: ${diff.added.slice(0, 25).join(', ')}${diff.added.length > 25 ? ' …' : ''}\n` : '') +
+    (diff.updated.length ? `  - Updated: ${diff.updated.slice(0, 25).join(', ')}${diff.updated.length > 25 ? ' …' : ''}\n` : '') +
+    (diff.removed.length ? `  - Removed: ${diff.removed.slice(0, 25).join(', ')}${diff.removed.length > 25 ? ' …' : ''}\n` : '') +
+    '\n';
+  // Insert newest entry just under the title.
+  const titleEnd = head.indexOf('\n\n') + 2;
+  const out = head.slice(0, titleEnd) + entry + head.slice(titleEnd);
+  await writeFile(path, out, 'utf8');
+}
+
 async function main() {
   const args = parseArgs(process.argv);
   const raw = await loadRawCards(args.in);
@@ -115,20 +174,44 @@ async function main() {
   const cards = toCompact(raw);
   const version = utcDateStamp();
   const builtAt = new Date().toISOString();
-  const snapshot = {
-    schema: 1,
-    version,
-    builtAt,
-    count: cards.length,
-    cards,
-  };
 
+  await mkdir(args.out, { recursive: true });
+
+  // ── Diff vs. the currently-published snapshot ────────────────────────────
+  const previous = await loadPrevious(args.out);
+  const prevCards = previous?.snap?.cards || [];
+  const diff = diffCards(prevCards, cards);
+  const nextHash = contentHash(cards);
+  const prevHash = prevCards.length ? contentHash(prevCards) : null;
+
+  // No content change → skip publishing a new version (#51: "only changed
+  // records are applied"; nothing changed means nothing to apply). The
+  // workflow keys its commit step off this exit signal.
+  if (prevHash && prevHash === nextHash) {
+    console.log(`[build] no card changes since ${previous.manifest.version} — skipping new snapshot.`);
+    console.log('::no-changes::'); // machine-readable marker for CI
+    return;
+  }
+
+  const snapshot = { schema: 1, version, builtAt, count: cards.length, cards };
   const body = JSON.stringify(snapshot);
   const sha256 = createHash('sha256').update(body).digest('hex');
   const snapshotName = `cards-${version}.json`;
-
-  await mkdir(args.out, { recursive: true });
   await writeFile(join(args.out, snapshotName), body, 'utf8');
+
+  // Emit a small diff/patch sidecar so the client can apply only changes
+  // (#51: "avoid full re-download when incremental update is possible").
+  const patch = {
+    schema: 1,
+    fromVersion: previous?.manifest?.version || null,
+    toVersion: version,
+    builtAt,
+    added: cards.filter((c) => diff.added.includes(c.name)),
+    updated: cards.filter((c) => diff.updated.includes(c.name)),
+    removed: diff.removed, // names only — client deletes by key
+  };
+  const patchName = `cards-diff-${version}.json`;
+  await writeFile(join(args.out, patchName), JSON.stringify(patch), 'utf8');
 
   const manifest = {
     schema: 1,
@@ -137,13 +220,19 @@ async function main() {
     count: cards.length,
     builtAt,
     sha256,
+    // Incremental-apply hint for the client (#51).
+    diff: previous ? { fromVersion: previous.manifest.version, patch: patchName } : null,
   };
   await writeFile(join(args.out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+
+  await appendChangelog(args.out, version, diff, cards.length);
 
   const sizeMB = (Buffer.byteLength(body) / (1024 * 1024)).toFixed(2);
   const withSets = cards.filter((c) => c.sets.length).length;
   console.log(`[build] wrote ${snapshotName} — ${cards.length} cards (${withSets} with printings), ${sizeMB} MB`);
+  console.log(`[build] diff vs ${previous?.manifest?.version || '(none)'}: +${diff.added.length} added, ~${diff.updated.length} updated, -${diff.removed.length} removed → ${patchName}`);
   console.log(`[build] manifest.json updated — version=${version} sha256=${sha256.slice(0, 12)}…`);
+  console.log('::changed::'); // machine-readable marker for CI
 }
 
 main().catch((e) => {
