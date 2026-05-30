@@ -75,7 +75,11 @@
         <div class="group">
           <h2>Card Name</h2>
           <label>Scanned Name (read-only)</label>
-          <input id="ocrName" type="text" placeholder="Blue-Eyes White Dragon" readonly aria-readonly="true">
+          <!-- #45: neutral instructional placeholder so an empty field can't be
+               mistaken for a real scanned value (was the sample card name
+               "Blue-Eyes White Dragon", which read like live data). The field
+               is populated by the scan flow and cleared by clearFormAndState(). -->
+          <input id="ocrName" type="text" placeholder="— scan a card to populate —" readonly aria-readonly="true">
           <div class="inline">
             <span id="ocrConf" class="muted">accuracy: —</span>
             <span id="ocrStatus" class="status"></span>

@@ -629,9 +629,14 @@
     document.addEventListener("inventory:form:reset", () => {
       try { window.Scanner?.pause?.(); } catch (_) {}
       setTogglePaused(true);
-      // CONSOLE-OFF v12 try { clearFormAndState(); } catch (e) { console.warn("[scan] clearFormAndState on reset threw:", e); }
+      // #45: defensively clear the scan-owned field + state on reset so the
+      // read-only Scanned Name never lingers on a stale value (it must always
+      // reflect the current scan, or fall back to its empty placeholder).
+      // confirm.js already blanks #ocrName before dispatching, but we no longer
+      // depend on that ordering. Console output stays silent (no warn/log) to
+      // preserve the clean-console standard from #48.
+      try { clearFormAndState(); } catch (_) {}
       setAutoStatus("Saved — click Resume Scanning when ready for next card.");
-      // CONSOLE-OFF v12 console.log("[scan] inventory:form:reset — scanner paused, state cleared");
     });
 
     $("startBtn")?.addEventListener("click", async () => {
