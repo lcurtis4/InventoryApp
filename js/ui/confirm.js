@@ -196,14 +196,11 @@
     } else {
       const m = document.getElementById("successModal");
       if (!m) return;
-      // UI-7: aria-hidden focus violation fix — if focus is currently inside
-      // the modal we are about to hide, blur it so the browser doesn't warn
-      // about "Blocked aria-hidden on an element because its descendant
-      // retained focus." Then return focus to <body> as a neutral fallback.
-      if (m.contains(document.activeElement)) {
-        try { document.activeElement.blur(); } catch (_) {}
-        try { document.body.focus(); } catch (_) {}
-      }
+      // v16 (#27): move focus out of the modal BEFORE setting aria-hidden="true"
+      // (shared helper handles the body-tabindex dance). Prevents Chrome's
+      // "Blocked aria-hidden ... descendant retained focus" WCAG violation.
+      if (window.UI?.moveFocusOutOf) window.UI.moveFocusOutOf(m);
+      else if (m.contains(document.activeElement)) { try { document.activeElement.blur(); } catch (_) {} }
       m.classList.remove("is-open");
       m.setAttribute("aria-hidden", "true");
     }
@@ -257,13 +254,13 @@
   }
   function closeCodeConfirmModal() {
     if (!codeModal) return;
-    // UI-7: aria-hidden focus violation fix — blur any focused descendant
-    // BEFORE we set aria-hidden="true", otherwise the browser will log:
-    // "Blocked aria-hidden on an element because its descendant retained focus."
-    if (codeModal.contains(document.activeElement)) {
-      try { document.activeElement.blur(); } catch (_) {}
-      try { document.body.focus(); } catch (_) {}
-    }
+    // v16 (#27): the flagged violation was <button#codeConfirmConfirmBtn>
+    // retaining focus inside <div#codeConfirmModal> at the moment we set
+    // aria-hidden="true". Move focus OUT first via the shared helper (which
+    // reliably parks focus on <body>), THEN hide. Falls back to a plain blur
+    // if the helper isn't present.
+    if (window.UI?.moveFocusOutOf) window.UI.moveFocusOutOf(codeModal);
+    else if (codeModal.contains(document.activeElement)) { try { document.activeElement.blur(); } catch (_) {} }
     codeModal.classList.add("hidden");
     codeModal.setAttribute("aria-hidden", "true");
   }

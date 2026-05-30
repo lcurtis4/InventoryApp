@@ -177,11 +177,33 @@
 
   // ── Fetch and downscale a thumbnail from URL ─────────────────────────────────
   // Returns a THUMB_SIZE×THUMB_SIZE canvas or null on error.
+  //
+  // v9 (#27 console hygiene): YGOPRODeck's image host does NOT send an
+  // `Access-Control-Allow-Origin` header. Because we need to read the pixels
+  // back via getImageData() for the Pearson art-similarity score, the <img>
+  // must be loaded with crossOrigin="anonymous" — but a CORS-less host then
+  // makes the browser BLOCK the request entirely, logging a noisy
+  //   "Access to image ... has been blocked by CORS policy" + net::ERR_FAILED
+  // for every candidate thumbnail. To keep the console clean (and still get a
+  // readable canvas) we route the request through corsproxy.io, which echoes
+  // `Access-Control-Allow-Origin: *`, yielding a non-tainted canvas. We try the
+  // CORS-friendly proxy first; if it fails we silently resolve null (visual
+  // scoring is an optional boost, never required), so no error reaches console.
   const _thumbCache = new Map();
-  function fetchThumb(url) {
-    if (_thumbCache.has(url)) return _thumbCache.get(url);
 
-    const p = new Promise((resolve) => {
+  // Wrap a YGOPRODeck (or any) image URL so the response carries permissive
+  // CORS headers, keeping the resulting canvas readable for getImageData().
+  function corsFriendly(url) {
+    if (!url) return url;
+    // Already proxied? leave as-is.
+    if (url.indexOf("corsproxy.io") !== -1) return url;
+    return "https://corsproxy.io/?" + encodeURIComponent(url);
+  }
+
+  // Load one URL into a THUMB_SIZE canvas. Resolves null on any failure.
+  // `silentError` swallows the onerror without logging (we control fallback).
+  function loadThumbOnce(url) {
+    return new Promise((resolve) => {
       if (!url) return resolve(null);
       const img = new Image();
       img.crossOrigin = "anonymous";
@@ -193,12 +215,29 @@
           c.width  = THUMB_SIZE;
           c.height = THUMB_SIZE;
           ctx2d(c).drawImage(img, 0, 0, THUMB_SIZE, THUMB_SIZE);
+          // Touch the pixels to confirm the canvas is not tainted; if it is,
+          // this throws and we fall back to null rather than poisoning callers.
+          ctx2d(c).getImageData(0, 0, 1, 1);
           resolve(c);
         } catch { resolve(null); }
       };
       img.onerror = () => { clearTimeout(timeout); resolve(null); };
       img.src = url;
     });
+  }
+
+  function fetchThumb(url) {
+    if (_thumbCache.has(url)) return _thumbCache.get(url);
+
+    const p = (async () => {
+      if (!url) return null;
+      // Primary: CORS-friendly proxy (readable canvas, no console CORS error).
+      const viaProxy = await loadThumbOnce(corsFriendly(url));
+      if (viaProxy) return viaProxy;
+      // Fallback: direct host (works if it ever starts sending CORS headers,
+      // or if the proxy is down). Failure here resolves null silently.
+      return await loadThumbOnce(url);
+    })();
 
     _thumbCache.set(url, p);
     return p;

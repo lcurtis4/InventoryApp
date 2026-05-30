@@ -112,6 +112,26 @@
 
   function hasMinLen3(s) { return (String(s || '').trim().length >= 3); }
 
+  // v11 (#27 console hygiene): YGOPRODeck's cardinfo.php returns 400 Bad Request
+  // for a few predictable query shapes, and even though fetchJson() swallows the
+  // parsed body, the browser still logs the failed GET to the console/network
+  // tab. We saw ≥5 such 400s during a single name lookup (per-keystroke
+  // autocomplete + chunk fan-out hitting empty/short/garbage queries). These
+  // guards short-circuit BEFORE the request is made so no 400 is ever emitted:
+  //   • fname must be non-empty and ≥3 chars (upstream 400s on shorter)
+  //   • fname must NOT contain spaces — multi-word fname reliably 400s upstream
+  //     (documented in v9.1 notes); callers should chunk to single words first
+  //   • name must be non-empty and ≥3 chars
+  function isFnameQueryable(s) {
+    const t = String(s || '').trim();
+    if (t.length < 3) return false;
+    if (/\s/.test(t)) return false; // multi-word fname → guaranteed 400 upstream
+    return true;
+  }
+  function isNameQueryable(s) {
+    return String(s || '').trim().length >= 3;
+  }
+
   // Extra-hard sanitizer for fuzzy API (strip diacritics & odd chars)
   function sanitizeForApi(s) {
     let t = String(s || '');
@@ -361,8 +381,10 @@
     // default; we don't need misc fields for resolve.
 
     // 1) Exact name attempt (handles special chars)
+    // v11 (#27): isNameQueryable mirrors hasMinLen3 but documents the guard
+    // intent at the request site (skip empty/too-short to avoid upstream 400s).
     let out = [];
-    if (hasMinLen3(exact)) {
+    if (isNameQueryable(exact)) {
       const urlExact = baseUrl + new URLSearchParams({ name: exact }).toString();
       // CONSOLE-OFF v12 console.log("[api] exact-name attempt:", exact);
       const dataExact = await fetchJson(urlExact, { timeoutMs: 3000 });
@@ -373,10 +395,14 @@
       }
     }
 
-    // 2) Fuzzy fallback if exact returned nothing
-    if (!out.length && hasMinLen3(fuzzy)) {
-      const urlFuzzy = baseUrl + new URLSearchParams({ fname: fuzzy }).toString();
-      // CONSOLE-OFF v12 console.log("[api] fuzzy-name attempt:", fuzzy);
+    // 2) Fuzzy fallback if exact returned nothing.
+    // v11 (#27): only fire when fname is actually queryable (single word, ≥3
+    // chars). Multi-word fuzzy queries 400 upstream, so chunk to the longest
+    // single word instead of sending the whole multi-word string.
+    const fuzzyQ = isFnameQueryable(fuzzy) ? fuzzy : (strongestChunks(fuzzy)[0] || '');
+    if (!out.length && isFnameQueryable(fuzzyQ)) {
+      const urlFuzzy = baseUrl + new URLSearchParams({ fname: fuzzyQ }).toString();
+      // CONSOLE-OFF v12 console.log("[api] fuzzy-name attempt:", fuzzyQ);
       const dataFuzzy = await fetchJson(urlFuzzy, { timeoutMs: 3000 });
       const listFuzzy = Array.isArray(dataFuzzy?.data) ? dataFuzzy.data : [];
       // CONSOLE-OFF v12 console.log("[api] fuzzy-name result:", listFuzzy.length, "hit(s)");
@@ -387,17 +413,19 @@
 
     // 3) v8.3b: stripped-tail fallback — retry with trailing OCR noise removed.
     // Common case: "Clown Crew Meteor 68" → "Clown Crew Meteor".
-    if (!out.length && hasMinLen3(stripped) && stripped !== fuzzy) {
-      const urlStripped = baseUrl + new URLSearchParams({ fname: stripped }).toString();
-      // CONSOLE-OFF v12 console.log("[api] stripped-tail attempt:", stripped, "(from:", fuzzy + ")");
+    // v11 (#27): same single-word-fname guard; skip if not queryable or dup.
+    const strippedQ = isFnameQueryable(stripped) ? stripped : (strongestChunks(stripped)[0] || '');
+    if (!out.length && isFnameQueryable(strippedQ) && strippedQ !== fuzzyQ) {
+      const urlStripped = baseUrl + new URLSearchParams({ fname: strippedQ }).toString();
+      // CONSOLE-OFF v12 console.log("[api] stripped-tail attempt:", strippedQ, "(from:", fuzzy + ")");
       const dataStripped = await fetchJson(urlStripped, { timeoutMs: 3000 });
       const listStripped = Array.isArray(dataStripped?.data) ? dataStripped.data : [];
       // CONSOLE-OFF v12 console.log("[api] stripped-tail result:", listStripped.length, "hit(s)");
       if (listStripped.length) {
         out = listStripped.map(c => ({ id: c.id, name: c.name, sets: c.card_sets || [] }));
       }
-    } else if (!out.length && stripped === fuzzy) {
-      // CONSOLE-OFF v12 console.log("[api] stripped-tail skipped — same as fuzzy:", fuzzy);
+    } else if (!out.length && strippedQ === fuzzyQ) {
+      // CONSOLE-OFF v12 console.log("[api] stripped-tail skipped — same as fuzzy:", fuzzyQ);
     }
 
     indexByName(out);
