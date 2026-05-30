@@ -83,7 +83,12 @@
     if (window.ScannerParts.ctx2d && typeof window.ScannerParts.ctx2d === "function") {
       return window.ScannerParts.ctx2d(canvas);
     }
-    return canvas.getContext ? canvas.getContext("2d") : null;
+    // The work/frame canvas is read back via getImageData on every monitor
+    // tick, so request willReadFrequently:true to avoid the Canvas2D readback
+    // warning and speed up repeated reads (#68).
+    return canvas.getContext
+      ? canvas.getContext("2d", { willReadFrequently: true })
+      : null;
   };
   const firstById = (ids) => {
     for (const id of ids) { const el = $(id); if (el) return el; }
