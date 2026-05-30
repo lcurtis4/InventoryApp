@@ -94,7 +94,12 @@
   // Fields prefilled by code should NOT be highlighted.
   function applyNeedsInput(opts) {
     // opts: { set: bool, rarity: bool, condition: bool, qty: bool }
-    const ids = { setSelect: opts.set, raritySelect: opts.rarity, conditionSelect: opts.condition, qty: opts.qty };
+    // v16 (#5): Condition must NEVER receive .needs-input — its default value is
+    // acceptable on its own and does not require a manual pick. We force the
+    // conditionSelect entry to `false` here so no caller (current or future)
+    // can re-introduce the stray highlight, and we proactively strip any
+    // pre-existing highlight on it as a belt-and-suspenders guard.
+    const ids = { setSelect: opts.set, raritySelect: opts.rarity, conditionSelect: false, qty: opts.qty };
     for (const [id, needs] of Object.entries(ids)) {
       const el = $(id);
       if (!el) continue;
@@ -404,12 +409,14 @@
     $("ocrConf").textContent = `code: exact`;
 
     // v8.2: highlight fields still needing input (set/rarity already filled by code)
-    const condFilled = !!(State.selectedCondition || ($("conditionSelect")?.value));
+    // v16 (#5): Condition is intentionally NOT highlighted — its default is
+    // acceptable and does not require a manual pick. applyNeedsInput() also
+    // hard-forces condition:false, so this is belt-and-suspenders.
     const qtyVal     = parseInt($("qty")?.value || "0", 10);
     applyNeedsInput({
       set:       false,          // prefilled by code
       rarity:    false,          // prefilled by code
-      condition: !condFilled,
+      condition: false,          // #5: never highlight Condition
       qty:       !(qtyVal >= 1),
     });
 
