@@ -257,9 +257,9 @@
 
     if (nameOcr && geo) {
       const band = geo.findTitleBand(frame);
-      _lastDetectedRect = band._rect;
+      _lastDetectedRect = band?._rect || null;
       nameBand = band;
-      if (!band._tooEmpty) {
+      if (band && !band._tooEmpty) {
         nameResult = await nameOcr.scanBand(band).catch(e => {
           // CONSOLE-OFF v12 console.warn("[core] name OCR failed:", e);
           return null;

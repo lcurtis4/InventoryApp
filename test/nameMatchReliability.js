@@ -105,8 +105,22 @@ async function main() {
   if (!NamesStore) throw new Error('NamesStore failed to load');
 
   // Populate the store from the SAME source the app uses.
+  // Fail-fast: NamesStore.ready() fetches the live YGOPRODeck DB and has no
+  // internal timeout, so a stalled/blocked network would hang this gate
+  // indefinitely. Race it against a hard deadline and exit cleanly on timeout.
+  const READY_TIMEOUT_MS = 30000;
   process.stdout.write('Fetching full card-name list from YGOPRODeck... ');
-  const info = await NamesStore.ready();
+  try {
+    await Promise.race([
+      NamesStore.ready(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`NamesStore.ready() timed out after ${READY_TIMEOUT_MS}ms`)), READY_TIMEOUT_MS)
+      ),
+    ]);
+  } catch (e) {
+    console.error(`\nERROR: ${e.message}. Network/API unavailable — cannot measure reliability.`);
+    process.exit(2);
+  }
   console.log(`done — ${NamesStore.size()} names cached.`);
   if (NamesStore.size() === 0) {
     console.error('ERROR: names store is empty (network/API issue). Cannot measure.');
