@@ -1,8 +1,76 @@
 :root {
-  --bg:#fff; --fg:#111; --muted:#666; --primary:#0b5; --hint:#f5f7ff; --border:#e5e5e5;
-  --card:#fafafa; --shadow: 0 2px 10px rgba(0,0,0,.06);
+  /* ====================================================================== */
+  /* Sprint 4 — UI-1: Design token foundation                                */
+  /* Spacing, radius, type, color, and shadow scales. All other tokens and  */
+  /* selectors below compose against these primitives.                      */
+  /* ====================================================================== */
 
-  /* Camera box sizing */
+  /* --- Spacing scale (4px base) --- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  /* --- Radius scale --- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* --- Text scale (sizes only; UI-2 owns families & weights) --- */
+  --text-xs:   0.72rem;
+  --text-sm:   0.85rem;
+  --text-base: 1rem;
+  --text-lg:   1.125rem;
+  --text-xl:   1.35rem;
+
+  /* --- Neutral scale --- */
+  --color-neutral-50:  #fafafa;
+  --color-neutral-100: #f5f5f5;
+  --color-neutral-200: #e5e5e5;
+  --color-neutral-300: #d4d4d4;
+  --color-neutral-500: #737373;
+  --color-neutral-700: #404040;
+  --color-neutral-900: #111111;
+
+  /* --- Primary scale (green — established brand accent, see UI-5) --- */
+  --color-primary-50:  #e6f7ee;
+  --color-primary-500: #00bb55;
+  --color-primary-600: #009a45;
+  --color-primary-700: #007a36;
+
+  /* --- Status scale (paired bg + accent) --- */
+  --color-success:    #2e7d32;
+  --color-success-bg: #e8f5e9;
+  --color-warn:       #b26a00;
+  --color-warn-bg:    #fff8e1;
+  --color-danger:     #c0392b;
+  --color-danger-bg:  #fdecea;
+  --color-info:       #1565c0;
+  --color-info-bg:    #e3f2fd;
+
+  /* --- Shadow scale --- */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.05);
+  --shadow-md: 0 2px 10px rgba(0,0,0,.06);
+  --shadow-lg: 0 18px 60px rgba(0,0,0,.25);
+
+  /* --- Legacy aliases (kept so existing selectors keep working) --- */
+  --bg:      #fff;
+  --fg:      var(--color-neutral-900);
+  --muted:   var(--color-neutral-500);
+  --primary: var(--color-primary-500);
+  --hint:    #f5f7ff;
+  --border:  var(--color-neutral-200);
+  --card:    var(--color-neutral-50);
+  --shadow:  var(--shadow-md);
+
+  /* --- Component-specific sizing (preserved from pre-Sprint-4) --- */
+
+  /* Camera box */
   --cam-w: 360px;           /* locked width on desktop */
   --cam-aspect: 63/88;      /* YGO card shape (~0.686) */
 
@@ -17,30 +85,257 @@
 * { box-sizing: border-box; }
 html, body { height:100%; }
 body {
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  /* UI-2: Inter-first stack with system fallbacks (zero network requirement) */
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: var(--text-base);
+  line-height: 1.5;
   margin:16px; color:var(--fg); background:var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
-h1 { margin:0 0 8px 0; }
+h1 { margin:0 0 8px 0; font-size: var(--text-xl); font-weight: 700; line-height: 1.25; }
+h2 { font-size: var(--text-lg); font-weight: 600; line-height: 1.3; }
+
+/* ====================================================================== */
+/* UI-3: App header / shell                                                */
+/* Sticky header bar with logo + wordmark left, version pill + account     */
+/* slot right. Account slot is a stub for SaaS-1 (#12).                    */
+/* ====================================================================== */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #fff;
+  border-bottom: 1px solid var(--color-neutral-200);
+  box-shadow: var(--shadow-sm);
+  /* Cancel the body's 16px outer margin so the header bar reaches edge-to-edge */
+  margin: -16px -16px var(--space-4);
+  padding: 0 var(--space-4);
+}
+.app-header__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  height: 56px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  text-decoration: none;
+  color: var(--color-neutral-900);
+  outline: none;
+}
+.app-brand:focus-visible {
+  outline: 2px solid var(--color-primary-500);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+.app-brand__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-primary-600);
+}
+.app-brand__wordmark {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  color: var(--color-neutral-900);
+}
+.app-header__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.app-header__account {
+  /* Stub placeholder for SaaS-1 multi-tenant account UI (#12). */
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill);
+  background: var(--color-neutral-100);
+  border: 1px solid var(--color-neutral-200);
+}
+.app-subtitle {
+  margin: 0 0 var(--space-4);
+}
+
+/* ====================================================================== */
+/* UI-10: Responsive breakpoint convention                                 */
+/* Two breakpoints, used everywhere below:                                 */
+/*   sm  — (max-width: 640px)   phone-portrait                            */
+/*   lg  — (min-width: 1024px)  desktop                                   */
+/* Tablet portrait (641–1023px) uses the same rules as desktop.            */
+/* Previously this file used 420/480/520/980/981 — all consolidated.       */
+/* ====================================================================== */
+
+/* sm: Header collapses gracefully on narrow viewports */
+@media (max-width: 640px) {
+  .app-header__inner { height: 52px; }
+  .app-brand__wordmark { font-size: var(--text-base); }
+  .app-header .ver-badge { display: none; }
+}
+
 
 /* Layout */
 .layout { display:grid; grid-template-columns: 1fr 1fr; gap:16px; align-items:start; }
 .left-col, .right-col { width:100%; }
 
-/* Panels / Form card */
-.panel, .formcard {
-  background:var(--card);
-  border:1px solid var(--border);
-  border-radius:12px;
-  box-shadow:var(--shadow);
-  padding:14px;
+/* ====================================================================== */
+/* UI-4: Surface system                                                    */
+/* One recipe for every card/panel/banner. Existing classes are grouped    */
+/* into the selector list rather than duplicated — no HTML changes needed. */
+/* ====================================================================== */
+
+/* Base surface: white, neutral-200 border, --radius-md, sm shadow */
+.surface,
+.tablewrap,
+.capture-confirm-bar,
+.cc-card {
+  background: #fff;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
+
+/* Elevated surface variant: main form/camera panels */
+.surface--elevated,
+.panel,
+.formcard {
+  background: #fff;
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-4);
+}
+
+/* Subtle surface variant: status bars + pickers (no shadow, tinted bg) */
+.surface--subtle,
+.candidates-picker,
+.match-source-bar {
+  background: var(--color-neutral-50);
+  border: 1px solid var(--color-neutral-200);
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+
+/* Padding helpers (surfaces that already declare their own padding keep it) */
+.capture-confirm-bar { padding: var(--space-3); }
+.cc-card { padding: var(--space-3); }
+
 .formcard .group + .group { border-top:1px solid var(--border); padding-top:8px; margin-top:10px; }
-.formcard h2 { font-size:1.05rem; margin:0 0 8px; }
+.formcard h2 { font-size:var(--text-lg); margin:0 0 8px; }
 
 .controls { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
-.primary { background:var(--primary); color:#fff; border:0; border-radius:10px; padding:10px 14px; cursor:pointer; }
-.secondary { background:#333; color:#fff; border:0; border-radius:10px; padding:10px 14px; cursor:pointer; }
-.primary:disabled, .secondary:disabled { opacity:.6; cursor:not-allowed; }
+
+/* ====================================================================== */
+/* UI-5: Button system                                                     */
+/* Single unified .btn + variants. .primary / .secondary kept as aliases   */
+/* so existing HTML works unchanged. Confirm-modal blue is retired — all  */
+/* primaries now use the brand green token scale.                          */
+/* ====================================================================== */
+.btn,
+.primary,
+.secondary,
+#codeConfirmModal .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color .15s, border-color .15s, box-shadow .15s, color .15s;
+  white-space: nowrap;
+  user-select: none;
+}
+.btn:focus-visible,
+.primary:focus-visible,
+.secondary:focus-visible,
+#codeConfirmModal .btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-50);
+  border-color: var(--color-primary-500);
+}
+.btn:disabled,
+.primary:disabled,
+.secondary:disabled,
+#codeConfirmModal .btn:disabled,
+#codeConfirmModal .btn-primary:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Primary variant (brand green) */
+.btn--primary,
+.primary,
+#codeConfirmModal .btn-primary {
+  background: var(--color-primary-500);
+  color: #fff;
+  border-color: var(--color-primary-500);
+}
+.btn--primary:hover:not(:disabled),
+.primary:hover:not(:disabled),
+#codeConfirmModal .btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-600);
+  border-color: var(--color-primary-600);
+}
+.btn--primary:active:not(:disabled),
+.primary:active:not(:disabled),
+#codeConfirmModal .btn-primary:active:not(:disabled) {
+  background: var(--color-primary-700);
+  border-color: var(--color-primary-700);
+}
+
+/* Secondary variant (neutral filled) */
+.btn--secondary,
+.secondary,
+#codeConfirmModal .btn-secondary {
+  background: var(--color-neutral-100);
+  color: var(--color-neutral-900);
+  border-color: var(--color-neutral-200);
+}
+.btn--secondary:hover:not(:disabled),
+.secondary:hover:not(:disabled),
+#codeConfirmModal .btn-secondary:hover:not(:disabled) {
+  background: var(--color-neutral-200);
+  border-color: var(--color-neutral-300);
+}
+.btn--secondary:active:not(:disabled),
+.secondary:active:not(:disabled),
+#codeConfirmModal .btn-secondary:active:not(:disabled) {
+  background: var(--color-neutral-300);
+}
+
+/* Ghost variant (text-only with subtle hover) */
+.btn--ghost {
+  background: transparent;
+  color: var(--color-neutral-700);
+  border-color: var(--color-neutral-300);
+}
+.btn--ghost:hover:not(:disabled) {
+  background: var(--color-neutral-100);
+  color: var(--color-neutral-900);
+}
+
+/* Size modifier */
+.btn--sm {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+/* Width modifier */
+.btn--block { width: 100%; }
 
 /* Lock Start / Pause-Resume button sizes */
 #startBtn,
@@ -55,16 +350,57 @@ h1 { margin:0 0 8px 0; }
   padding: 0; /* override generic .primary/.secondary padding so size stays fixed */
 }
 
-.muted { color:var(--muted); font-size:0.95em; }
+.muted { color:var(--muted); font-size:var(--text-sm); }
 .status { min-height:1.2em; }
 .hint { background:var(--hint); padding:6px 8px; border-radius:6px; display:inline-block; }
 
-label { display:block; margin:6px 0 4px; font-size:0.95rem; }
-input, select, button { font-size:1rem; }
-input[type="text"], input[type="number"], select {
-  width:100%; padding:10px; border:1px solid #ccc; border-radius:8px; background:#fff;
+label { display:block; margin:6px 0 4px; font-size:var(--text-sm); }
+input, select, button { font-size:var(--text-base); font-family: inherit; }
+
+/* ====================================================================== */
+/* UI-6: Form controls polish                                              */
+/* Unified idle / hover / focus / disabled / readonly visuals for inputs   */
+/* and selects. Focus ring uses the same primary token as buttons.         */
+/* ====================================================================== */
+input[type="text"],
+input[type="number"],
+select {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-neutral-300);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--color-neutral-900);
+  transition: border-color .15s, box-shadow .15s, background-color .15s;
 }
-input[readonly] { background:#f7f7f7; color:#333; }
+input[type="text"]:hover:not(:disabled):not([readonly]),
+input[type="number"]:hover:not(:disabled):not([readonly]),
+select:hover:not(:disabled) {
+  border-color: var(--color-neutral-500);
+}
+input[type="text"]:focus,
+input[type="text"]:focus-visible,
+input[type="number"]:focus,
+input[type="number"]:focus-visible,
+select:focus,
+select:focus-visible {
+  outline: none;
+  border-color: var(--color-primary-500);
+  box-shadow: 0 0 0 3px var(--color-primary-50);
+}
+input[type="text"]:disabled,
+input[type="number"]:disabled,
+select:disabled,
+input[readonly] {
+  background: var(--color-neutral-100);
+  color: var(--color-neutral-700);
+  cursor: not-allowed;
+}
+input::placeholder {
+  color: var(--color-neutral-500);
+  font-style: normal;
+  opacity: 1;
+}
 
 .inline { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 .row { display:flex; gap:10px; align-items:center; }
@@ -72,10 +408,66 @@ input[readonly] { background:#f7f7f7; color:#333; }
 .row .grow { flex:1 1 auto; }
 .row .col { flex:1 1 0; min-width:0; }
 
-.tablewrap { width:100%; overflow:auto; border:1px solid var(--border); border-radius:10px; background:#fff; }
-table { width:100%; border-collapse:collapse; font-size:0.95rem; }
-th, td { border-bottom:1px solid #f0f0f0; padding:8px 10px; text-align:left; }
-th { background:#fafafa; position:sticky; top:0; z-index:1; }
+/* ====================================================================== */
+/* UI-8: Recent Items table polish                                         */
+/* Zebra striping, hover row, sticky header treatment, empty-state row.    */
+/* All token-driven. Zero HTML changes — empty state uses CSS :has().       */
+/* ====================================================================== */
+/* .tablewrap visuals come from the .surface recipe above */
+.tablewrap {
+  width:100%;
+  overflow:auto;
+  max-height: 480px;                /* scroll body, keep sticky header in view */
+}
+table {
+  width:100%;
+  border-collapse:separate;          /* required for sticky-header + clean borders */
+  border-spacing:0;
+  font-size:var(--text-sm);
+  color:var(--color-neutral-900);
+}
+th, td {
+  border-bottom:1px solid var(--color-neutral-200);
+  padding:10px 12px;
+  text-align:left;
+  vertical-align:middle;
+}
+/* Sticky header treatment: tinted, subtle bottom border, slightly stronger text */
+th {
+  background:var(--color-neutral-100);
+  position:sticky;
+  top:0;
+  z-index:1;
+  font-weight:600;
+  color:var(--color-neutral-700);
+  text-transform:uppercase;
+  font-size:var(--text-xs);
+  letter-spacing:0.04em;
+  border-bottom:2px solid var(--color-neutral-200);
+}
+/* Zebra striping — odd rows slightly tinted for scannability */
+tbody tr:nth-child(odd)  td { background:#fff; }
+tbody tr:nth-child(even) td { background:var(--color-neutral-50); }
+/* Hover row — light primary tint signals interactivity even if non-clickable */
+tbody tr:hover td { background:var(--color-primary-50); }
+/* Last row — drop the bottom border so it doesn't double with table edge */
+tbody tr:last-child td { border-bottom:0; }
+/* Sent? column (last col) — nudge to center for the checkmark glyph */
+tbody td:last-child { text-align:center; }
+
+/* Empty-state row: when tbody has no rows, show a helpful placeholder    */
+/* via the .tablewrap wrapper using :has(). Falls back gracefully on      */
+/* browsers without :has() (the table just looks blank, no break).        */
+.tablewrap:has(#grid tbody:empty)::after {
+  content: "No items yet — add one to see it here.";
+  display: block;
+  padding: 24px 16px;
+  color: var(--color-neutral-700);
+  font-size: var(--text-sm);
+  text-align: center;
+  background: var(--color-neutral-50);
+  border-top: 1px solid var(--color-neutral-200);
+}
 
 /* ---------- Camera: lock size (no layout shift while panning) ---------- */
 .camwrap {
@@ -113,14 +505,14 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   clip:rect(0,0,0,0); white-space:nowrap; border:0;
 }
 
-/* Responsive: stack on small screens */
-@media (max-width: 980px) {
+/* UI-10: stack layout below desktop (was: max-width 980px) */
+@media (max-width: 1023px) {
   .layout { grid-template-columns: 1fr; }
-  :root { --cam-w: 100%; }          /* camera fills card on mobile */
+  :root { --cam-w: 100%; }          /* camera fills card on tablet+phone */
 }
 
-/* On very small screens, let the two buttons expand full width */
-@media (max-width: 520px) {
+/* sm: let the two scanner buttons expand full width (was: max-width 520px) */
+@media (max-width: 640px) {
   #startBtn, #scanToggleBtn {
     inline-size: 100%;
     flex: 1 1 auto;
@@ -131,15 +523,12 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
 #confirmBtn { margin: 8px 0; }
 
 /* Capture confirm bar (v13.1: art-forward card layout, matches .cc-card) */
+/* .capture-confirm-bar visuals come from the .surface recipe above */
 .capture-confirm-bar {
   display: flex;
   flex-direction: row;
   gap: 12px;
   align-items: stretch;
-  background: #fff;
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  padding: 10px;
   margin: 6px 0 8px;
 }
 .ccb-art {
@@ -148,12 +537,12 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   object-fit: cover;
   border-radius: 5px;
   flex-shrink: 0;
-  background: #eee;
+  background: var(--color-neutral-200);
   display: block;
 }
 /* v13.3: shimmer placeholder while name→id fetch is in flight */
 .ccb-art-loading {
-  background: linear-gradient(90deg, #eee 0%, #f5f5f5 50%, #eee 100%);
+  background: linear-gradient(90deg, var(--color-neutral-200) 0%, var(--color-neutral-100) 50%, var(--color-neutral-200) 100%);
   background-size: 200% 100%;
   animation: ccb-shimmer 1.2s ease-in-out infinite;
 }
@@ -169,14 +558,14 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   min-width: 0;
 }
 .ccb-name {
-  font-size: 1rem;
+  font-size: var(--text-base);
   font-weight: 700;
   color: var(--fg);
   line-height: 1.25;
   word-break: break-word;
 }
 .ccb-meta {
-  font-size: 0.82rem;
+  font-size: var(--text-xs);
   color: var(--muted);
   font-family: 'Courier New', Courier, monospace;
   letter-spacing: 0.03em;
@@ -195,97 +584,116 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   padding: 6px 12px;
 }
 
-/* Stack on small screens */
-@media (max-width: 480px) {
+/* sm: stack capture-confirm-bar (was: max-width 480px) */
+@media (max-width: 640px) {
   .capture-confirm-bar { flex-direction: column; align-items: center; gap: 10px; }
   .ccb-art { width: 100px; height: 146px; }
   .ccb-info { width: 100%; }
   .ccb-actions { justify-content: center; }
 }
 
-/* ---------------- Modal ---------------- */
-.modal { position:fixed; inset:0; display:none; }
+/* ====================================================================== */
+/* UI-7: Unified modal system                                              */
+/* Two HTML structures coexist:                                            */
+/*   1. .modal__dialog (BEM)            — used by #successModal             */
+/*   2. .modal-content (id-scoped legacy) — used by #codeConfirmModal      */
+/* Both share the same visual recipe via grouped selectors.                */
+/* Token-driven: --radius-lg, --shadow-lg, --color-neutral-100 tint.       */
+/* ====================================================================== */
+.modal { position:fixed; inset:0; display:none; z-index: 9000; }
 .modal.is-open { display:block; }
 /* (Backdrop removed) */
-.modal__dialog {
+
+/* Dialog container — shared between BEM and legacy id-scoped variants */
+.modal__dialog,
+#codeConfirmModal .modal-content {
   position:absolute; left:50%; top:50%; transform:translate(-50%, -50%);
-  width:min(520px, calc(100vw - 40px));
-  background:#fff; border-radius:14px; box-shadow:0 18px 60px rgba(0,0,0,.25);
+  width:min(560px, calc(100vw - 40px));
+  background:#fff;
+  border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-lg);
+  overflow:hidden;
   outline:none;
 }
-.modal__header { padding:14px 16px 0; }
-.modal__title { margin:0; font-size:1.15rem; }
-.modal__body { padding:12px 16px 0; color:#333; }
-.modal__footer { padding:16px; display:flex; justify-content:flex-end; gap:8px; }
 
-/* Constrain overall page width on big screens */
-@media (min-width: 981px) {
+/* Header — tinted, padded, flex row for title + optional close button */
+.modal__header,
+#codeConfirmModal .modal-header {
+  padding:14px 16px;
+  background:var(--color-neutral-100);
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+}
+.modal__title,
+#codeConfirmModal .modal-header h2 {
+  margin:0;
+  font-size:var(--text-xl);
+  font-weight:600;
+}
+
+/* Body — neutral text, padded */
+.modal__body,
+#codeConfirmModal .modal-body {
+  padding:16px;
+  color:var(--color-neutral-700);
+  background:#fff;
+}
+
+/* Footer — tinted, right-aligned button row */
+.modal__footer,
+#codeConfirmModal .modal-footer {
+  padding:14px 16px;
+  background:var(--color-neutral-100);
+  display:flex;
+  justify-content:flex-end;
+  gap:8px;
+}
+
+/* lg: constrain overall page width on desktop (was: min-width 981px) */
+@media (min-width: 1024px) {
   body { max-width: 1200px; margin: 16px auto; }
   .layout { grid-template-columns: minmax(340px, 560px) 1fr; column-gap: 24px; }
   .left-col .panel { max-width: 560px; margin-inline: auto; }
 }
 
 /* ====================================================================== */
-/* Confirm Card Modal (id-specific): solid white box, centered            */
-/* No backdrop element present in HTML for this modal.                     */
+/* Confirm Card Modal — visibility wiring                                  */
+/* Visuals come from the shared .modal / .modal__dialog rules above.       */
+/* aria-hidden drives display state since this modal uses .hidden + aria  */
+/* rather than the .is-open class pattern.                                 */
 /* ====================================================================== */
+#codeConfirmModal { z-index: 9999; }                       /* above app UI */
+#codeConfirmModal[aria-hidden="false"] { display: block; }
+#codeConfirmModal[aria-hidden="true"]  { display: none;  }
 
-#codeConfirmModal { z-index: 9999; }              /* above app UI */
-#codeConfirmModal[aria-hidden="false"] { display: block; } /* show when JS opens it */
-#codeConfirmModal[aria-hidden="true"]  { display: none;  } /* hide when JS closes it */
-
-/* Dialog (your HTML uses .modal-content; map to same visuals as .modal__dialog) */
-#codeConfirmModal .modal-content {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: min(560px, calc(100vw - 40px)); /* v13: a touch wider to fit art + details row */
-  background: #fff;                    /* solid white */
-  border-radius: 14px;
-  box-shadow: 0 18px 60px rgba(0,0,0,.25);
-  overflow: hidden;
-  outline: none;
-}
-
-/* Header / Body / Footer to match your BEM modal look */
-#codeConfirmModal .modal-header { padding: 14px 16px 0; display:flex; align-items:center; justify-content:space-between; background:#f7f7f7; }
-#codeConfirmModal .modal-body   { padding: 12px 16px 0; color:#333; background:#fff; }
-#codeConfirmModal .modal-footer { padding: 16px; display:flex; justify-content:flex-end; gap:8px; background:#f7f7f7; }
-
+/* Close button (×) — matches both BEM and legacy id-scoped variants */
+.modal__close,
 #codeConfirmModal .modal-close {
   background: transparent;
   border: 0;
-  font-size: 20px;
+  font-size: var(--text-lg);
   cursor: pointer;
   line-height: 1;
+  color: var(--color-neutral-700);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+}
+.modal__close:hover,
+#codeConfirmModal .modal-close:hover {
+  background: var(--color-neutral-200);
+  color: var(--color-neutral-900);
 }
 
-#codeConfirmModal .btn {
-  padding: 8px 12px;
-  border-radius: 10px;
-  border: 1px solid #d1d5db;
-  cursor: pointer;
-  font: inherit;
-}
+/* #codeConfirmModal .btn / .btn-primary / .btn-secondary now alias the
+   unified UI-5 button system above. No mode-specific declarations here. */
 
-#codeConfirmModal .btn-primary {
-  background: #2563eb;
-  color: #fff;
-  border-color: #2563eb;
-}
-#codeConfirmModal .btn-primary:disabled { opacity:.6; cursor:not-allowed; }
-
-#codeConfirmModal .btn-secondary {
-  background: #e5e7eb;
-  color: #111827;
-}
-
-/* Small screens */
-@media (max-width: 420px) {
+/* sm: slightly tighter modal radius (was: max-width 420px) */
+@media (max-width: 640px) {
+  .modal__dialog,
   #codeConfirmModal .modal-content {
     width: 94vw;
-    border-radius: 12px;
+    border-radius: var(--radius-md);
   }
 }
 
@@ -294,15 +702,12 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
 /* Mirrors the .cand-card visual language from the candidates picker      */
 /* but laid out as a horizontal row: art left, details right.             */
 /* ====================================================================== */
+/* .cc-card visuals come from the .surface recipe above */
 .cc-card {
   display: flex;
   flex-direction: row;
   gap: 14px;
   align-items: stretch;
-  background: #fff;
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  padding: 12px;
   margin: 4px 0 12px;
 }
 .cc-art {
@@ -311,7 +716,7 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   object-fit: cover;
   border-radius: 6px;
   flex-shrink: 0;
-  background: #eee;
+  background: var(--color-neutral-200);
   display: block;
 }
 .cc-info {
@@ -322,7 +727,7 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   min-width: 0;
 }
 .cc-name {
-  font-size: 1.05rem;
+  font-size: var(--text-lg);
   font-weight: 700;
   color: var(--fg);
   line-height: 1.25;
@@ -333,7 +738,7 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   display: flex;
   gap: 8px;
   align-items: baseline;
-  font-size: 0.88rem;
+  font-size: var(--text-sm);
   line-height: 1.3;
 }
 .cc-label {
@@ -342,7 +747,7 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
 }
 .cc-value {
   color: var(--fg);
@@ -355,8 +760,8 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   letter-spacing: 0.04em;
 }
 
-/* Stack vertically on small screens */
-@media (max-width: 480px) {
+/* sm: stack .cc-card vertically (was: max-width 480px) */
+@media (max-width: 640px) {
   .cc-card { flex-direction: column; align-items: center; gap: 10px; }
   .cc-art  { width: 120px; height: 175px; }
   .cc-info { width: 100%; }
@@ -367,7 +772,7 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
 /* v7: Version badge                                                        */
 /* ====================================================================== */
 .ver-badge {
-  font-size: 0.6em;
+  font-size: var(--text-xs);
   font-weight: 500;
   color: var(--muted);
   vertical-align: middle;
@@ -382,15 +787,13 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
 /* ====================================================================== */
 /* v7: Top-3 Candidates Picker                                              */
 /* ====================================================================== */
+/* .candidates-picker visuals come from the .surface--subtle recipe above */
 .candidates-picker {
   margin: 6px 0 4px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--hint);
-  padding: 10px;
+  padding: var(--space-3);
 }
 .cand-header {
-  font-size: 0.92rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--fg);
   margin-bottom: 8px;
@@ -428,10 +831,10 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   object-fit: cover;
   border-radius: 4px;
   display: block;
-  background: #eee;
+  background: var(--color-neutral-200);
 }
 .cand-name {
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--fg);
   line-height: 1.2;
@@ -439,7 +842,7 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   hyphens: auto;
 }
 .cand-conf {
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   color: var(--muted);
 }
 .cand-footer {
@@ -449,11 +852,11 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
 }
 .cand-rescan {
   padding: 6px 12px;
-  font-size: 0.92rem;
+  font-size: var(--text-sm);
 }
 
-/* On very small screens, stack candidates vertically */
-@media (max-width: 420px) {
+/* sm: stack candidates vertically (was: max-width 420px) */
+@media (max-width: 640px) {
   .cand-list { flex-direction: column; }
   .cand-card { max-width: 100%; flex: 1 1 auto; flex-direction: row; }
   .cand-img  { width: 48px; height: 66px; flex-shrink: 0; }
@@ -471,7 +874,7 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
 }
 .code-input {
   font-family: 'Courier New', Courier, monospace;
-  font-size: 1rem;
+  font-size: var(--text-base);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   flex: 1 1 auto;
@@ -482,10 +885,10 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
 }
 .code-help code {
   font-family: 'Courier New', Courier, monospace;
-  background: #f0f0f0;
+  background: var(--color-neutral-200);
   border-radius: 3px;
   padding: 1px 4px;
-  font-size: 0.9em;
+  font-size: var(--text-sm);
 }
 #codeLookupBtn {
   flex: 0 0 auto;
@@ -495,7 +898,7 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
 
 /* v8: candidate card enhancements (meta + score row + exact badge) */
 .cand-meta {
-  font-size: 0.70rem;
+  font-size: var(--text-xs);
   color: var(--muted);
   text-align: center;
   line-height: 1.3;
@@ -510,18 +913,19 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
 }
 .cand-conf,
 .cand-vis {
-  font-size: 0.70rem;
+  font-size: var(--text-xs);
   color: var(--muted);
-  background: #f0f0f0;
+  background: var(--color-neutral-200);
   border-radius: 4px;
   padding: 1px 5px;
 }
+/* UI-9: status tokens — visual-confidence chip uses success palette */
 .cand-vis {
-  background: #e8f5e9;
-  color: #2e7d32;
+  background: var(--color-success-bg);
+  color: var(--color-success);
 }
 .cand-exact-badge {
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: #fff;
   background: var(--primary);
@@ -531,21 +935,21 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   letter-spacing: 0.04em;
 }
 
-/* v8: visual assist note inside picker */
+/* v8: visual assist note inside picker (UI-9: status tokens — success) */
 .cand-vis-note {
-  font-size: 0.78rem;
-  color: #2e7d32;
-  background: #e8f5e9;
-  border-radius: 6px;
+  font-size: var(--text-xs);
+  color: var(--color-success);
+  background: var(--color-success-bg);
+  border-radius: var(--radius-sm);
   padding: 4px 8px;
   margin-bottom: 6px;
-  border: 1px solid #c8e6c9;
+  border: 1px solid var(--color-success);
 }
 
-/* Danger / error status text */
+/* Danger / error status text — UI-9: status tokens */
 .status.danger,
 .status[class*="error"] {
-  color: #c0392b;
+  color: var(--color-danger);
 }
 
 /* ====================================================================== */
@@ -555,7 +959,7 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
 /* --- Separate code-crop debug canvas --- */
 .debug-label {
   display: block;
-  font-size: 0.82rem;
+  font-size: var(--text-xs);
   margin-bottom: 3px;
   font-weight: 600;
 }
@@ -565,38 +969,37 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   border: 1px solid #444;
 }
 .debug-hint {
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   font-weight: 400;
   margin-left: 6px;
   padding: 1px 6px;
   border-radius: 4px;
   vertical-align: middle;
 }
+/* UI-9: debug-hint variants — status tokens */
 .debug-hint--warn {
-  background: #fff3cd;
-  color: #856404;
-  border: 1px solid #ffc107;
+  background: var(--color-warn-bg);
+  color: var(--color-warn);
+  border: 1px solid var(--color-warn);
 }
 .debug-hint--ok {
-  background: #d4edda;
-  color: #155724;
-  border: 1px solid #28a745;
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid var(--color-success);
 }
 
 /* --- Match-source status bar --- */
+/* .match-source-bar base visuals come from .surface--subtle above; modes (UI-9) override bg/border */
 .match-source-bar {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-top: 8px;
   padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: var(--hint);
-  font-size: 0.88rem;
+  font-size: var(--text-sm);
 }
 .match-source-icon {
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   flex-shrink: 0;
 }
 .match-source-label {
@@ -604,30 +1007,34 @@ th { background:#fafafa; position:sticky; top:0; z-index:1; }
   font-weight: 600;
   color: var(--fg);
 }
-/* Mode colour variants */
+/* Mode colour variants — UI-9: all modes consume status tokens.        */
+/* exact-code     → success (green)                                       */
+/* code-unresolved→ warn    (amber) — OCR read a code we couldn't resolve */
+/* name-fallback  → warn    (amber) — no code, matched by name only      */
+/* manual-code    → info    (blue)  — user typed it themselves           */
 .match-source-bar[data-mode="exact-code"] {
-  background: #e8f5e9;
-  border-color: #81c784;
+  background: var(--color-success-bg);
+  border-color: var(--color-success);
 }
-.match-source-bar[data-mode="exact-code"] .match-source-icon { color: #2e7d32; }
+.match-source-bar[data-mode="exact-code"] .match-source-icon { color: var(--color-success); }
 
 .match-source-bar[data-mode="code-unresolved"] {
-  background: #fff8e1;
-  border-color: #ffd54f;
+  background: var(--color-warn-bg);
+  border-color: var(--color-warn);
 }
-.match-source-bar[data-mode="code-unresolved"] .match-source-icon { color: #e65100; }
+.match-source-bar[data-mode="code-unresolved"] .match-source-icon { color: var(--color-warn); }
 
 .match-source-bar[data-mode="name-fallback"] {
-  background: #fff3e0;
-  border-color: #ffb74d;
+  background: var(--color-warn-bg);
+  border-color: var(--color-warn);
 }
-.match-source-bar[data-mode="name-fallback"] .match-source-icon { color: #bf360c; }
+.match-source-bar[data-mode="name-fallback"] .match-source-icon { color: var(--color-warn); }
 
 .match-source-bar[data-mode="manual-code"] {
-  background: #e3f2fd;
-  border-color: #64b5f6;
+  background: var(--color-info-bg);
+  border-color: var(--color-info);
 }
-.match-source-bar[data-mode="manual-code"] .match-source-icon { color: #1565c0; }
+.match-source-bar[data-mode="manual-code"] .match-source-icon { color: var(--color-info); }
 
 /* --- .needs-input field highlight --- */
 /* Applied to select/input when a required field still needs attention */
@@ -649,7 +1056,7 @@ input:not(.needs-input) {
 #torchBtn {
   flex: 0 0 auto;
   padding: 6px 12px;
-  font-size: 0.9rem;
+  font-size: var(--text-sm);
 }
 #torchBtn.torch-on {
   background: #f59e0b;
@@ -661,5 +1068,5 @@ input:not(.needs-input) {
 .merge-tag {
   color: var(--muted);
   font-weight: 500;
-  font-size: 0.95em;
+  font-size: var(--text-sm);
 }
