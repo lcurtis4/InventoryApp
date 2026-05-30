@@ -847,6 +847,13 @@ tbody td:last-child { text-align:center; }
   box-shadow: 0 0 0 2px rgba(0,187,85,0.18);
   outline: none;
 }
+/* #90 (EPIC-87): selected printing tile in the multi-option picker. */
+.cand-card--selected,
+.cand-card--selected:hover {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(0,187,85,0.35);
+  background: rgba(0,187,85,0.06);
+}
 .cand-img {
   width: 72px;
   height: 100px;
@@ -871,10 +878,17 @@ tbody td:last-child { text-align:center; }
   margin-top: 8px;
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
 }
-.cand-rescan {
+.cand-rescan,
+.cand-confirm {
   padding: 6px 12px;
   font-size: var(--text-sm);
+}
+/* #90: in-picker Confirm is disabled until a printing tile is selected. */
+.cand-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* sm: stack candidates vertically (was: max-width 420px) */

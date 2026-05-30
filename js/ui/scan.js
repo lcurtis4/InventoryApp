@@ -332,9 +332,13 @@
     }
     card.appendChild(confRow);
 
+    // #90 (EPIC-87, AC-010..013): selecting a tile no longer immediately
+    //   commits. It marks the tile as selected; the single in-picker Confirm
+    //   button (added in showCandidatesPicker) commits the selection. This
+    //   restores the legacy multi-option picker with exactly one confirm step
+    //   and no silent auto-pick.
     card.addEventListener("click", () => {
-      hideCandidatesPicker(); hideCaptureConfirmBar();
-      if (typeof onPick === "function") onPick(c);
+      if (typeof onPick === "function") onPick(c, card);
     });
     return card;
   }
@@ -357,13 +361,40 @@
       picker.appendChild(visNote);
     }
 
+    // #90: track the currently-selected tile + candidate. Confirm is disabled
+    //   until the user picks one (no silent auto-pick).
+    let selectedCand = null;
+    let selectedEl   = null;
+
     const list = document.createElement("div");
     list.className = "cand-list";
-    candidates.forEach(c => list.appendChild(makeCandCard(c, scannedCode, (picked) => { onPick && onPick(picked); })));
+    candidates.forEach(c => list.appendChild(makeCandCard(c, scannedCode, (picked, cardEl) => {
+      selectedCand = picked;
+      if (selectedEl) selectedEl.classList.remove("cand-card--selected");
+      selectedEl = cardEl;
+      cardEl.classList.add("cand-card--selected");
+      cardEl.setAttribute("aria-pressed", "true");
+      if (confirmBtn) confirmBtn.disabled = false;
+    })));
     picker.appendChild(list);
 
     const footer = document.createElement("div");
     footer.className = "cand-footer";
+
+    // #90 (AC-011/AC-012): single in-picker Confirm button. Commits the chosen
+    //   printing in one click — no separate codeConfirmModal afterward.
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.className = "primary cand-confirm";
+    confirmBtn.textContent = "Confirm";
+    confirmBtn.disabled = true;
+    confirmBtn.addEventListener("click", () => {
+      if (!selectedCand) return;
+      hideCandidatesPicker(); hideCaptureConfirmBar();
+      onPick && onPick(selectedCand);
+    });
+    footer.appendChild(confirmBtn);
+
     const rescanBtn = document.createElement("button");
     rescanBtn.type = "button"; rescanBtn.className = "secondary cand-rescan"; rescanBtn.textContent = "Rescan";
     rescanBtn.addEventListener("click", () => { hideCandidatesPicker(); hideCaptureConfirmBar(); onRescan && onRescan(); });
@@ -611,20 +642,28 @@
       return;
     }
 
-    // #55: Multiple candidates → auto-pick the top match and route it straight
-    // into the single Accept & Confirm bar (no two-step tile-picker). Rescan on
-    // the confirm bar is the escape hatch if the top match is wrong; Manual Name
-    // override remains available. The legacy picker (showCandidatesPicker) is
-    // kept in code for back-compat but is no longer shown in the normal flow.
-    hideCandidatesPicker();
-    applyCodeCandidate(best, primaryCode || best.set_code || "");
-    if (scanMode === "code") setMatchSource("exact-code", best.set_code || primaryCode);
-    else setMatchSource("name-fallback", scannedText || "");
-    const bestLabel = best.set_code
-      ? `${best.set_code} · ${best.set_rarity || ""}`.trim()
-      : (best.set_rarity || "");
-    setAutoStatus(`Found: ${best.name}. Choose condition + qty, then confirm (or Rescan).`);
-    showCaptureConfirmBar(best, bestLabel || null);
+    // #90 (EPIC-87, AC-010..013): revert #55's silent auto-pick. When a lookup
+    //   returns multiple printings, show the multi-option picker so the user
+    //   selects the correct Set/Rarity printing. Selecting a tile + the single
+    //   in-picker Confirm commits the choice (no codeConfirmModal double-step),
+    //   then routes into the existing capture-confirm bar where Condition + Qty
+    //   stay (unchanged). Single-match branch above is untouched.
+    setAutoStatus(`Multiple printings for ${best.name} — choose one below.`);
+    showCandidatesPicker(
+      candidates,
+      primaryCode || "",
+      (picked) => {
+        applyCodeCandidate(picked, primaryCode || picked.set_code || "");
+        if (scanMode === "code") setMatchSource("exact-code", picked.set_code || primaryCode);
+        else setMatchSource("name-fallback", scannedText || "");
+        const lbl = picked.set_code
+          ? `${picked.set_code} · ${picked.set_rarity || ""}`.trim()
+          : (picked.set_rarity || "");
+        setAutoStatus(`Selected: ${picked.name}. Choose condition + qty, then confirm.`);
+        showCaptureConfirmBar(picked, lbl || null);
+      },
+      doRescan
+    );
   }
 
   // ── Bind UI actions ────────────────────────────────────────────────────────────
@@ -765,4 +804,6 @@
 
   window.UI.scan = window.UI.scan || {};
   window.UI.scan.bind = bind;
+  // #90 (EPIC-87): expose the multi-option picker for direct use/testing.
+  window.UI.scan.showCandidatesPicker = showCandidatesPicker;
 })();
