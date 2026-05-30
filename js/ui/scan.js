@@ -514,7 +514,9 @@
           if (v && v.videoWidth) {
             const wc = document.getElementById("workCanvas") || document.createElement("canvas");
             wc.width = v.videoWidth; wc.height = v.videoHeight;
-            wc.getContext("2d").drawImage(v, 0, 0);
+            // willReadFrequently:true — this canvas is read back via getImageData
+            // downstream (image assist / band detect), avoids the Canvas2D warning (#68).
+            wc.getContext("2d", { willReadFrequently: true }).drawImage(v, 0, 0);
             candidates = await ia.scoreVisually(candidates, wc);
           }
         } catch (_) {}

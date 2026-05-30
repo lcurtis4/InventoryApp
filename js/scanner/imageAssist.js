@@ -52,7 +52,7 @@
 
   // ── Tuning constants ─────────────────────────────────────────────────────────
   // Card art occupies roughly the top 50-55% of card height (below name/type headers).
-  // Fractions are relative to the estimated card face rect (same origin as codeOcr.js).
+  // Fractions are relative to the estimated card face rect (card-guide origin).
   const ART_REGION = {
     fromTopFrac:    0.12,  // art starts ~12% from card top (below name band)
     heightFrac:     0.40,  // art occupies ~40% of card height

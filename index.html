@@ -52,13 +52,9 @@
           <label class="muted debug-label">Name band OCR crop</label>
           <canvas id="debugCanvas" class="debug-canvas"></canvas>
         </div>
-        <div class="debug-section" id="codeDebugSection">
-          <label class="muted debug-label">
-            Set code OCR crop
-            <span id="codeDebugHint" class="debug-hint" style="display:none;"></span>
-          </label>
-          <canvas id="codeDebugCanvas" class="debug-canvas debug-canvas--code"></canvas>
-        </div>
+        <!-- Set-code OCR debug panel removed in #54 (set-code SCAN/OCR pipeline
+             retired; automatic scan is name-only). Manual Set Code entry is
+             unaffected and lives in the lookup UI. -->
 
         <!-- v8.2: Match-source status — shows how the final suggestion was derived -->
         <div id="matchSourceBar" class="match-source-bar" style="display:none;" aria-live="polite">
@@ -252,7 +248,6 @@
   <script defer src="js/scanner/preprocess.js"></script>
   <script defer src="js/scanner/bandDetect.js"></script>
   <script defer src="js/scanner/ocr.js"></script>
-  <script defer src="js/scanner/codeOcr.js"></script>
   <script defer src="js/scanner/imageAssist.js"></script>
   <script defer src="js/scanner/overlay.js"></script>
   <script defer src="js/scanner/camera.js"></script>
