@@ -366,7 +366,34 @@
       });
     }
 
-    // (#8 name-band overlay added in the next commit)
+    // ── Name-band overlay (#8) — dashed yellow over the detected title band ───
+    // The band is detected in SOURCE pixels by geometry.js; map it to display
+    // pixels. Falls back to the static guide-band fractions if no band detected
+    // yet (e.g. before the first scan), so the user always sees a name region.
+    const lastRect =
+      window.ScannerParts._internal &&
+      typeof window.ScannerParts._internal.lastDetectedRect === "function"
+        ? window.ScannerParts._internal.lastDetectedRect()
+        : null;
+    let nameRect = _sourceRectToDisplay(lastRect);
+    if (!nameRect) {
+      // Fallback: mirror geometry's guide fractions on the visible video box.
+      nameRect = {
+        x: c.width * 0.06,
+        y: c.height * 0.15,
+        w: c.width * 0.88,
+        h: c.height * 0.12,
+      };
+    }
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = CODE_STROKE;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(nameRect.x, nameRect.y, nameRect.w, nameRect.h);
+    ctx.fillStyle = CODE_STROKE;
+    ctx.textBaseline = "bottom";
+    ctx.textAlign = "left";
+    ctx.font = "11px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+    ctx.fillText("name", nameRect.x + 2, nameRect.y - 2);
 
     ctx.restore();
 
