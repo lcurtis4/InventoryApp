@@ -449,6 +449,13 @@
     // formalize the failure/fallback policy.
     try {
       if (window.CardDb && typeof window.CardDb.lookupByName === 'function') {
+        // Wait for the initial snapshot import to finish before treating a local
+        // miss as authoritative — otherwise an in-flight import yields false
+        // misses and avoidable YGOPRODeck fallback calls. ready() is best-effort:
+        // if it rejects, fall through to the remote path rather than throwing.
+        if (typeof window.CardDb.ready === 'function') {
+          try { await window.CardDb.ready(); } catch (_) { /* best-effort: fall through to remote */ }
+        }
         const local = await window.CardDb.lookupByName(cardName);
         if (local && Array.isArray(local.sets) && local.sets.length) {
           indexByName([{ id: local.id, name: local.name, sets: local.sets }]);

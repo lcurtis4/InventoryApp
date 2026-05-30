@@ -97,29 +97,35 @@ async function loadRawCards(inPath) {
 // Transform the verbose API record into our compact local schema.
 function toCompact(raw) {
   const cards = [];
-  const seen = new Set();
+  // key (lowercased name) → { card, seenPrint } so later rows sharing the same
+  // normalized name MERGE their printings into the first-seen card instead of
+  // being dropped (the DB occasionally lists alt-art rows under the same name,
+  // each carrying distinct set entries we'd otherwise lose).
+  const byName = new Map();
   for (const c of raw) {
     const name = c && typeof c.name === 'string' ? c.name.trim() : '';
     if (!name) continue;
     const id = Number.isFinite(c.id) ? c.id : null;
-    // Dedup by name (the DB occasionally lists alt-art rows under same name).
     const key = name.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
 
-    const sets = [];
-    const seenPrint = new Set();
+    let entry = byName.get(key);
+    if (!entry) {
+      const card = { id, name, sets: [] };
+      entry = { card, seenPrint: new Set() };
+      byName.set(key, entry);
+      cards.push(card);
+    }
+
     for (const s of (Array.isArray(c.card_sets) ? c.card_sets : [])) {
       const set_name = (s?.set_name || '').trim();
       const set_code = (s?.set_code || '').trim();
       const set_rarity = (s?.set_rarity || '').trim();
       if (!set_name && !set_code) continue;
       const pk = `${set_name}|${set_code}|${set_rarity}`;
-      if (seenPrint.has(pk)) continue;
-      seenPrint.add(pk);
-      sets.push({ set_name, set_code, set_rarity });
+      if (entry.seenPrint.has(pk)) continue;
+      entry.seenPrint.add(pk);
+      entry.card.sets.push({ set_name, set_code, set_rarity });
     }
-    cards.push({ id, name, sets });
   }
   // Stable sort by name for deterministic diffs (helps #51).
   cards.sort((a, b) => a.name.localeCompare(b.name));

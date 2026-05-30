@@ -20,7 +20,7 @@ CodeRabbit is a GitHub App and must be installed on the repository by an admin â
 this cannot be done from a PR or config file alone:
 
 1. Open <https://github.com/marketplace/coderabbitai> and **Install** the app.
-2. Scope it to the `lcurtis4/InventoryApp` repository.
+2. Scope it to the `<owner>/<repo>` repository.
 3. Confirm the plan: the free tier covers public/OSS repos. If this repo is
    **private**, verify the chosen plan covers private-repo usage.
 4. Open a test PR and confirm CodeRabbit posts a review + summary.

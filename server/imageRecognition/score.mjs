@@ -17,6 +17,26 @@ export const TEXT_WEIGHT = 0.70;
 
 const FETCH_TIMEOUT_MS = 4000;
 
+// Bound parallel art fetch/decodes so a large candidate list can't burst the
+// server with unbounded concurrent network + CPU work.
+const MAX_CONCURRENCY = 4;
+
+// Map over `items` with at most `limit` tasks in flight at once. Results stay in
+// input order. Per-item rejection is the caller's concern (mapper never throws).
+async function mapWithConcurrency(items, limit, mapper) {
+  const results = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await mapper(items[i], i);
+    }
+  }
+  const pool = Array.from({ length: Math.min(limit, items.length) }, worker);
+  await Promise.all(pool);
+  return results;
+}
+
 // Fetch a candidate art image and return its decoded RGBA, or null on any error.
 // `fetchImpl` is injectable so tests can supply local fixtures with no network.
 async function fetchArt(url, fetchImpl) {
@@ -59,7 +79,7 @@ export async function scoreCandidates(artDataUrl, candidates, opts = {}) {
   const cropImg = decodeImage(bufferFromDataUrl(artDataUrl));
   const cropHash = averageHash(cropImg, HASH_SIZE);
 
-  const scored = await Promise.all(list.map(async (c) => {
+  const scored = await mapWithConcurrency(list, MAX_CONCURRENCY, async (c) => {
     const art = await fetchArt(c.imageUrl, opts.fetchImpl);
     if (!art) {
       // Could not get/decode this candidate's art → no visual signal for it.
@@ -70,7 +90,7 @@ export async function scoreCandidates(artDataUrl, candidates, opts = {}) {
     const textScore = clamp01(c.score);
     const blendedScore = TEXT_WEIGHT * textScore + VIS_WEIGHT * imgScore;
     return { ...c, imgScore, blendedScore: clamp01(blendedScore) };
-  }));
+  });
 
   return scored.sort((a, b) => b.blendedScore - a.blendedScore);
 }

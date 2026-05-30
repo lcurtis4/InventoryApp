@@ -21,7 +21,7 @@ pixels again — it only POSTs its own art crop (a `data:` URL) as JSON.
 
 ## What it does
 
-```
+```text
   browser (scanner)                       backend (this service)
   ─────────────────                       ──────────────────────
   1. crop card art from camera frame
@@ -182,8 +182,12 @@ This is a spike; it deliberately stops short of production hardening:
 - **No caching.** Each `/score` refetches candidate art. Production should cache
   fingerprints (tie in with the local card DB, epic #49 / #74 image refs) so the
   server never refetches.
-- **No auth / rate limiting / input hardening** beyond an 8 MB body cap and a
-  permissive CORS policy suitable for local dev.
+- **No auth / rate limiting** beyond an 8 MB body cap. CORS no longer allows
+  `*` — it echoes only an explicitly-allowed Origin (`ALLOWED_ORIGIN` env,
+  default localhost). Productionizing (#13) still needs a real, deployed
+  allowlist **and an SSRF mitigation on the candidate `imageUrl`** (the server
+  fetches that URL on the client's behalf; the spike does not yet validate or
+  restrict it to YGOPRODeck hosts — that hardening is deferred to #13).
 - **Vendored JPEG decoder** is a baseline-only decoder; a real service would use
   a maintained image library (sharp/jimp) or a native codec.
 - **Deployment.** #13 covers hosting, the real API surface, and wiring the

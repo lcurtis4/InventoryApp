@@ -13,6 +13,13 @@ import { inflateSync } from 'node:zlib';
 
 const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
+// Hard sanity caps applied BEFORE any allocation, since width/height and the
+// inflated payload size are attacker-controlled (DoS risk). On violation we
+// throw so the caller's try/catch falls back to text-only.
+const MAX_DIM = 4096;                       // max width or height in pixels
+const MAX_PIXELS = 16 * 1024 * 1024;        // ~16 MP cap (4096*4096)
+const MAX_RAW_BYTES = 256 * 1024 * 1024;    // 256 MB cap on inflated/raw payload
+
 function paeth(a, b, c) {
   const p = a + b - c;
   const pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
@@ -52,10 +59,19 @@ export function decodePng(buf) {
   if (bitDepth !== 8) throw new Error(`unsupported PNG bit depth ${bitDepth}`);
   if (interlace !== 0) throw new Error('interlaced PNG not supported');
 
+  // Bound dimensions/pixel count BEFORE allocating the RGBA output buffer.
+  if (!(width > 0) || !(height > 0)) throw new Error('invalid PNG dimensions');
+  if (width > MAX_DIM || height > MAX_DIM) {
+    throw new Error(`PNG too large: ${width}x${height} exceeds ${MAX_DIM}px limit`);
+  }
+  if (width * height > MAX_PIXELS) {
+    throw new Error(`PNG pixel count ${width * height} exceeds ${MAX_PIXELS} limit`);
+  }
+
   const channels = { 0: 1, 2: 3, 4: 2, 6: 4 }[colorType];
   if (!channels) throw new Error(`unsupported PNG color type ${colorType}`);
 
-  const raw = inflateSync(Buffer.concat(idat));
+  const raw = inflateSync(Buffer.concat(idat), { maxOutputLength: MAX_RAW_BYTES });
   const bpp = channels;                 // bytes per pixel (8-bit)
   const stride = width * bpp;
   const out = new Uint8Array(width * height * 4);

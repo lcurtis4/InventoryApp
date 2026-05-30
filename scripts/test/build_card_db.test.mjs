@@ -113,6 +113,36 @@ test('changed content, same day → different version → real, non-self-referen
   assert.ok(files.includes(`cards-${m1.version}.json`), 'new snapshot written under new name');
 });
 
+async function readSnapshotCards(outDir) {
+  const m = await readManifest(outDir);
+  const snap = JSON.parse(await readFile(join(outDir, m.snapshot), 'utf8'));
+  return snap.cards;
+}
+
+test('duplicate normalized names MERGE their printings instead of dropping rows', async () => {
+  const out = await mkdtemp(join(tmpdir(), 'carddb-'));
+  // Two rows that normalize to the same name (case-insensitive), each carrying a
+  // DISTINCT printing, plus a third row that repeats one printing of the first.
+  await build(out, apiDump([
+    card(1, 'Dark Magician', [['Legend of Blue Eyes', 'LOB-005', 'Ultra Rare']]),
+    card(2, 'dark magician', [['Starter Deck Yugi', 'SDY-006', 'Ultra Rare']]),
+    card(3, 'Dark Magician', [
+      ['Legend of Blue Eyes', 'LOB-005', 'Ultra Rare'], // dup of row 1 → dedupe
+      ['Metal Raiders', 'MRD-000', 'Secret Rare'],      // new → merge
+    ]),
+  ]));
+
+  const cards = await readSnapshotCards(out);
+  // The three same-name rows collapse to ONE card.
+  const dm = cards.filter((c) => c.name.toLowerCase() === 'dark magician');
+  assert.equal(dm.length, 1, 'duplicate names must collapse to a single card');
+
+  // All distinct printings are preserved; the duplicate (LOB-005) is not counted twice.
+  const codes = dm[0].sets.map((s) => s.set_code).sort();
+  assert.deepEqual(codes, ['LOB-005', 'MRD-000', 'SDY-006'],
+    'printings from every same-name row must be merged, with identical entries deduped');
+});
+
 test('manifest.sha256 matches the snapshot bytes exactly', async () => {
   const out = await mkdtemp(join(tmpdir(), 'carddb-'));
   await build(out, apiDump([card(1, 'Alpha', [['Set A', 'AA-001', 'Common']])]));
