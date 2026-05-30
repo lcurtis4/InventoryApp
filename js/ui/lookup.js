@@ -78,7 +78,11 @@
       o.value = n; o.textContent = n;
       setSel.appendChild(o);
     });
-    if (sets.length > 0) setSel.classList.add("needs-input");
+    // #85 (EPIC-87, AC-001): the Set dropdown must NEVER show the amber
+    //   .needs-input highlight. Mirrors the Condition exclusion from #5.
+    //   Previously: `if (sets.length > 0) setSel.classList.add("needs-input")`
+    //   added a misleading "invalid" highlight even on a valid populated list.
+    setSel.classList.remove("needs-input");
   }
 
   function bind(){

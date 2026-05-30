@@ -99,7 +99,10 @@
     // conditionSelect entry to `false` here so no caller (current or future)
     // can re-introduce the stray highlight, and we proactively strip any
     // pre-existing highlight on it as a belt-and-suspenders guard.
-    const ids = { setSelect: opts.set, raritySelect: opts.rarity, conditionSelect: false, qty: opts.qty };
+    // #85 (EPIC-87, AC-001): Set dropdown is now treated the same way —
+    //   setSelect is forced to `false` so it can never receive the amber
+    //   highlight from any caller.
+    const ids = { setSelect: false, raritySelect: opts.rarity, conditionSelect: false, qty: opts.qty };
     for (const [id, needs] of Object.entries(ids)) {
       const el = $(id);
       if (!el) continue;
