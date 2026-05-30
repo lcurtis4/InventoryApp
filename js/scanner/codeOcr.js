@@ -65,6 +65,66 @@
     },
   ];
 
+  // ── v14: dev-tunable region overrides (persisted to localStorage) ───────────
+  // The shipped CODE_REGIONS above are the production defaults. A dev-mode drag
+  // UI (js/scanner/overlay.js) lets the user nudge the set-code crop live; the
+  // adjusted top/left/width/height fractions are persisted here so production
+  // builds boot straight to the saved coordinates. Only the geometric fractions
+  // are overridable — minW/minH/name stay fixed.
+  const LS_KEY = "ygo.codeRegions.v14";
+
+  function _clamp01(n, fallback) {
+    const v = Number(n);
+    if (!Number.isFinite(v)) return fallback;
+    return Math.max(0, Math.min(1, v));
+  }
+
+  // Returns the live region list: production defaults merged with any saved
+  // per-region overrides from localStorage. Always returns fresh objects so
+  // callers can't mutate the defaults.
+  function getActiveRegions() {
+    let overrides = {};
+    try {
+      const raw = (typeof localStorage !== "undefined") && localStorage.getItem(LS_KEY);
+      if (raw) overrides = JSON.parse(raw) || {};
+    } catch (_) { overrides = {}; }
+
+    return CODE_REGIONS.map((base) => {
+      const o = overrides[base.name];
+      if (!o) return { ...base };
+      return {
+        ...base,
+        top:    _clamp01(o.top,    base.top),
+        left:   _clamp01(o.left,   base.left),
+        width:  _clamp01(o.width,  base.width),
+        height: _clamp01(o.height, base.height),
+      };
+    });
+  }
+
+  // Persist an override for a single named region. Called by the dev drag UI.
+  function saveRegionOverride(name, frac) {
+    if (!name || !frac) return;
+    let overrides = {};
+    try {
+      const raw = (typeof localStorage !== "undefined") && localStorage.getItem(LS_KEY);
+      if (raw) overrides = JSON.parse(raw) || {};
+    } catch (_) { overrides = {}; }
+    const base = CODE_REGIONS.find((r) => r.name === name) || {};
+    overrides[name] = {
+      top:    _clamp01(frac.top,    base.top),
+      left:   _clamp01(frac.left,   base.left),
+      width:  _clamp01(frac.width,  base.width),
+      height: _clamp01(frac.height, base.height),
+    };
+    try { localStorage.setItem(LS_KEY, JSON.stringify(overrides)); } catch (_) {}
+  }
+
+  // Clear all saved overrides — restores shipped defaults.
+  function resetRegionOverrides() {
+    try { localStorage.removeItem(LS_KEY); } catch (_) {}
+  }
+
   // Legacy single-region constant retained for any external callers; no longer
   // used internally by cropCodeRegion() / scanCodeRegion().
   const CODE_REGION = {
@@ -407,7 +467,7 @@
   // Legacy single-region helper retained for backward compatibility. Now
   // returns the art-bottom-right crop (the primary location for modern prints).
   function cropCodeRegion(frameCanvas) {
-    return cropRegionFromCard(frameCanvas, CODE_REGIONS[0]);
+    return cropRegionFromCard(frameCanvas, getActiveRegions()[0]);
   }
 
   // ── Persistent Tesseract worker ───────────────────────────────────────────────
@@ -642,7 +702,7 @@
     }
 
     const results = [];
-    for (const region of CODE_REGIONS) {
+    for (const region of getActiveRegions()) {
       if (abortFlag && abortFlag.aborted) {
         // CONSOLE-OFF v12 console.log("[codeOcr] scanCodeRegion: aborted before region '%s' (name OCR already won)", region.name);
         break;
@@ -696,7 +756,16 @@
     cropRegionFromCard,    // v8.3c: explicit region selector
     terminateCodeWorker,
     CODE_REGION,           // legacy
-    CODE_REGIONS,          // v8.3c: array of named regions
+    CODE_REGIONS,          // v8.3c: array of named regions (production defaults)
+    // v14: live region accessor (defaults merged with localStorage overrides)
+    // and the dev-drag persistence helpers. Overlay/dev UI use these so the
+    // shipped CODE_REGIONS array is never mutated in place.
+    getActiveRegions,
+    saveRegionOverride,
+    resetRegionOverrides,
+    // v14: expose the card-rect-in-source computation so the name-band overlay
+    // (#8) and the dev drag UI share the SAME card-rect coordinate basis.
+    computeCardRectInSource: _computeCardRectInSource,
     // Diagnostics thresholds exposed for console adjustment
     LOW_BRIGHTNESS_THRESHOLD,
     LOW_CONTRAST_THRESHOLD,
