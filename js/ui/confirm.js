@@ -96,6 +96,49 @@
   // Recent grid
   const gridBody = document.querySelector("#grid tbody");
 
+  // ---- Condition options (single source of truth) — v16 (#42) ----------------
+  // The Condition <select> was previously static HTML in index.html. After a
+  // successful post, resetForm()'s resetSelect() destroyed every <option> and
+  // re-appended ONLY options[0] (the placeholder), so the real condition
+  // choices (NM/LP/MP/HP/D) vanished on the 2nd card and stayed gone until a
+  // full page reload. Unlike Set/Rarity (which repopulate from the next
+  // lookup), Condition has no repopulate path — its values are constant.
+  //
+  // Fix: drive Condition from this constant array via populateConditionSelect()
+  // and call it both on init AND on reset, so the dropdown always has its full
+  // option list regardless of how many cards have been posted in a row.
+  const CONDITIONS = [
+    { value: "NM", label: "NM" },
+    { value: "LP", label: "LP" },
+    { value: "MP", label: "MP" },
+    { value: "HP", label: "HP" },
+    { value: "D",  label: "D"  },
+  ];
+
+  // Rebuild the Condition <select> from CONDITIONS, preserving the leading
+  // "please select" placeholder. Optionally restore a previously-selected value.
+  function populateConditionSelect(keepValue) {
+    if (!conditionSel) return;
+    const prev = (typeof keepValue === "string") ? keepValue : "";
+    conditionSel.innerHTML = "";
+    const ph = document.createElement("option");
+    ph.value = "";
+    ph.textContent = "please select";
+    conditionSel.appendChild(ph);
+    CONDITIONS.forEach(c => {
+      const o = document.createElement("option");
+      o.value = c.value;
+      o.textContent = c.label;
+      conditionSel.appendChild(o);
+    });
+    // Restore a real prior selection if it still exists; else placeholder.
+    if (prev && CONDITIONS.some(c => c.value === prev)) {
+      conditionSel.value = prev;
+    } else {
+      conditionSel.selectedIndex = 0;
+    }
+  }
+
   // Submit guard — prevents double-posting on rapid clicks
   let inFlight = false;
 
@@ -320,7 +363,10 @@
 
     resetSelect(setSel);
     resetSelect(raritySel);
-    resetSelect(conditionSel);
+    // v16 (#42): Condition is NOT a dynamic select — rebuild it from the
+    // constant CONDITIONS list instead of letting resetSelect() strip every
+    // option down to the placeholder (which left it empty on the 2nd card).
+    populateConditionSelect();
 
     State.selectedSetName   = null;
     State.selectedRarity    = null;
@@ -465,5 +511,10 @@
 
   if (confirmBtn) confirmBtn.disabled = true;
 
-  // CONSOLE-OFF v13.4 console.log("[confirm] confirm.js initialized :: v13.4");
+  // v16 (#42): populate Condition from the constant list on initial load so the
+  // dropdown is authoritative from the start (and identical to its post-reset
+  // state), making the static index.html <option>s a redundant fallback only.
+  populateConditionSelect();
+
+  // CONSOLE-OFF v13.4 console.log("[confirm] confirm.js initialized :: v16 (#42 condition repopulate)");
 })();

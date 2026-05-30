@@ -148,6 +148,10 @@
               <input id="qty" type="number" min="1" step="1" placeholder="1" disabled>
               <br>
               <label>Condition:</label>
+              <!-- v16 (#42): Condition options are now populated/rebuilt by
+                   confirm.js (populateConditionSelect) from a constant list so
+                   they survive resetForm() after each successful post. These
+                   static options remain only as a no-JS fallback. -->
               <select id="conditionSelect">
                 <option value="">please select</option>
                 <option value="NM">NM</option>
