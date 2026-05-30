@@ -578,7 +578,10 @@
     //   null                              on failure / empty / no exact match
 
     // Path A — exact ?name= (single attempt, no retry loop)
+    // v17 (#27): guard against empty/too-short names that YGOPRODeck answers
+    // with a 400 (which the browser logs before fetchJson can swallow it).
     const pathName = async () => {
+      if (!isNameQueryable(candidate.name)) return null;
       const url = baseUrl + new URLSearchParams({ name: candidate.name }).toString();
       const data = await fetchJson(url, { timeoutMs: 3500 });
       const list = Array.isArray(data?.data) ? data.data : [];
@@ -595,32 +598,23 @@
     };
 
     // Path C — ?fname= (fuzzy on longest-word chunk; pick exact name match)
+    // v17 (#27): only query when the chunk passes the fname guard (≥3 chars,
+    // single word) — prevents the upstream 400s that flooded the console.
     const pathFname = async () => {
-      if (!chunks.length) return null;
+      if (!chunks.length || !isFnameQueryable(chunks[0])) return null;
       const url = baseUrl + new URLSearchParams({ fname: chunks[0] }).toString();
       const data = await fetchJson(url, { timeoutMs: 3500 });
       const list = Array.isArray(data?.data) ? data.data : [];
       return list.find(c => (c?.name || '').toLowerCase() === want) || null;
     };
 
-    // Path D — corsproxy ?name= (different upstream IP / edge cache)
-    const pathProxyName = async () => {
-      const direct = baseUrl + new URLSearchParams({ name: candidate.name }).toString();
-      const proxied = 'https://corsproxy.io/?' + encodeURIComponent(direct);
-      const data = await fetchJson(proxied, { timeoutMs: 5000 });
-      const list = Array.isArray(data?.data) ? data.data : [];
-      return list[0] || null;
-    };
-
-    // Path E — corsproxy ?fname= (longest chunk, exact-name match)
-    const pathProxyFname = async () => {
-      if (!chunks.length) return null;
-      const direct = baseUrl + new URLSearchParams({ fname: chunks[0] }).toString();
-      const proxied = 'https://corsproxy.io/?' + encodeURIComponent(direct);
-      const data = await fetchJson(proxied, { timeoutMs: 5000 });
-      const list = Array.isArray(data?.data) ? data.data : [];
-      return list.find(c => (c?.name || '').toLowerCase() === want) || null;
-    };
+    // Paths D & E (corsproxy ?name= / ?fname=) REMOVED in v17 (#27 console
+    // hygiene). corsproxy.io now returns 403 (Forbidden) for every request,
+    // so these fallbacks contributed nothing but a red "403" line to the
+    // console on every lookup (the browser logs the network failure before JS
+    // can swallow it). The direct Paths A–C plus the reliable cardset-scan
+    // (Path F) already cover lookups. If a CORS-friendly proxy is needed in
+    // future, reintroduce via a backend endpoint we control.
 
     // Path F — cardset-scan via codeSearch (the reliable workhorse).
     //   Fetches master set list, takes 40 most recent TCG sets, queries each
@@ -669,9 +663,7 @@
       pathName,         // 0
       pathId,           // 1
       pathFname,        // 2
-      pathProxyName,    // 3
-      pathProxyFname,   // 4
-      pathCardsetScan,  // 5
+      pathCardsetScan,  // 3  (corsproxy Paths D/E removed — v17 #27)
     ]);
 
     const elapsed = Date.now() - t0;
