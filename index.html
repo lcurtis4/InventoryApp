@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>YGO Scanner (v13.4)</title>
+  <title>YGO Scanner (v13.6)</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -22,7 +22,7 @@
         <h1 class="app-brand__wordmark">YGO Scanner</h1>
       </a>
       <div class="app-header__meta">
-        <span class="ver-badge" title="App version">v13.4</span>
+        <span class="ver-badge" title="App version">v13.6</span>
         <div class="app-header__account" aria-hidden="true" title="Account (multi-tenant — coming in #12)"></div>
       </div>
     </div>
@@ -148,6 +148,10 @@
               <input id="qty" type="number" min="1" step="1" placeholder="1" disabled>
               <br>
               <label>Condition:</label>
+              <!-- v16 (#42): Condition options are now populated/rebuilt by
+                   confirm.js (populateConditionSelect) from a constant list so
+                   they survive resetForm() after each successful post. These
+                   static options remain only as a no-JS fallback. -->
               <select id="conditionSelect">
                 <option value="">please select</option>
                 <option value="NM">NM</option>

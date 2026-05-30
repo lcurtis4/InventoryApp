@@ -176,33 +176,24 @@
   }
 
   // ── Fetch and downscale a thumbnail from URL ─────────────────────────────────
-  // Returns a THUMB_SIZE×THUMB_SIZE canvas or null on error.
-  const _thumbCache = new Map();
-  function fetchThumb(url) {
-    if (_thumbCache.has(url)) return _thumbCache.get(url);
-
-    const p = new Promise((resolve) => {
-      if (!url) return resolve(null);
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      const timeout = setTimeout(() => resolve(null), THUMB_TIMEOUT_MS);
-      img.onload = () => {
-        clearTimeout(timeout);
-        try {
-          const c = document.createElement("canvas");
-          c.width  = THUMB_SIZE;
-          c.height = THUMB_SIZE;
-          ctx2d(c).drawImage(img, 0, 0, THUMB_SIZE, THUMB_SIZE);
-          resolve(c);
-        } catch { resolve(null); }
-      };
-      img.onerror = () => { clearTimeout(timeout); resolve(null); };
-      img.src = url;
-    });
-
-    _thumbCache.set(url, p);
-    return p;
-  }
+  // v17 (#27 console hygiene — Option A): browser-only visual scoring is
+  // DISABLED to keep the console clean.
+  //
+  // Why: YGOPRODeck's image host (images.ygoprodeck.com) does NOT send an
+  // `Access-Control-Allow-Origin` header. Reading thumbnail pixels back via
+  // getImageData() for the Pearson art-similarity score therefore requires
+  // loading each <img> with crossOrigin="anonymous", which a CORS-less host
+  // refuses — the browser BLOCKS the request and logs, for every candidate:
+  //   "Access to image ... blocked by CORS policy" + net::ERR_FAILED
+  // A previous attempt to proxy through corsproxy.io made it worse (the proxy
+  // returned 403 Forbidden, so each thumbnail produced TWO red errors).
+  //
+  // Since visual scoring is only an optional tiebreaker on top of code/name
+  // OCR (which is the primary, decisive signal), we simply skip the remote
+  // pixel read entirely on the browser path. No <img crossOrigin> request is
+  // ever made, so the CORS error class disappears. Full visual recognition
+  // remains available by wiring window.ImageAssist.backendHook to a
+  // server-side endpoint that can fetch + analyze the art without CORS limits.
 
   // ── Score candidates visually ────────────────────────────────────────────────
   // candidates: array of { name, id, imageUrl, score, ... }
@@ -229,49 +220,13 @@
       }
     }
 
-    // Browser-only path
-    const artCrop = cropArtRegion(frameCanvas);
-    if (!artCrop) {
-      return candidates.map(c => ({ ...c, imgScore: null, blendedScore: c.score || 0 }));
-    }
-
-    const artThumb  = downscale(artCrop, THUMB_SIZE);
-    const artPixels = getPixels(artThumb);
-    if (!artPixels) {
-      return candidates.map(c => ({ ...c, imgScore: null, blendedScore: c.score || 0 }));
-    }
-    const artGray = toGray(artPixels);
-
-    // Limit to MAX_CANDIDATES_FOR_VIS
-    const toScore = candidates.slice(0, MAX_CANDIDATES_FOR_VIS);
-
-    // Fetch all thumbnails in parallel
-    const thumbPromises = toScore.map(c => fetchThumb(c.imageUrl || null));
-    const thumbCanvases = await Promise.all(thumbPromises);
-
-    const scored = toScore.map((c, i) => {
-      const thumb = thumbCanvases[i];
-      if (!thumb) {
-        return { ...c, imgScore: null, blendedScore: (c.score || 0) };
-      }
-      const thumbPixels = getPixels(thumb);
-      if (!thumbPixels) {
-        return { ...c, imgScore: null, blendedScore: (c.score || 0) };
-      }
-      const thumbGray = toGray(thumbPixels);
-      const imgScore  = pearson(artGray, thumbGray);
-      const textScore = typeof c.score === "number" ? c.score : 0;
-      const blended   = TEXT_WEIGHT * textScore + VIS_WEIGHT * imgScore;
-      return { ...c, imgScore, blendedScore: blended };
-    });
-
-    // Append any candidates beyond MAX_CANDIDATES_FOR_VIS unscored
-    const unscored = candidates.slice(MAX_CANDIDATES_FOR_VIS).map(c => ({
-      ...c, imgScore: null, blendedScore: c.score || 0,
-    }));
-
-    // Sort by blended score desc
-    return [...scored, ...unscored].sort((a, b) => b.blendedScore - a.blendedScore);
+    // Browser-only path (v17, #27): visual scoring disabled — see note above.
+    // No remote thumbnails are fetched, so no CORS errors are produced. Rank
+    // candidates purely by their existing text/OCR score (the primary signal),
+    // preserving the same descending-sort contract callers rely on.
+    return candidates
+      .map(c => ({ ...c, imgScore: null, blendedScore: c.score || 0 }))
+      .sort((a, b) => b.blendedScore - a.blendedScore);
   }
 
   // ── Public API ───────────────────────────────────────────────────────────────

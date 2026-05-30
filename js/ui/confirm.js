@@ -96,6 +96,49 @@
   // Recent grid
   const gridBody = document.querySelector("#grid tbody");
 
+  // ---- Condition options (single source of truth) — v16 (#42) ----------------
+  // The Condition <select> was previously static HTML in index.html. After a
+  // successful post, resetForm()'s resetSelect() destroyed every <option> and
+  // re-appended ONLY options[0] (the placeholder), so the real condition
+  // choices (NM/LP/MP/HP/D) vanished on the 2nd card and stayed gone until a
+  // full page reload. Unlike Set/Rarity (which repopulate from the next
+  // lookup), Condition has no repopulate path — its values are constant.
+  //
+  // Fix: drive Condition from this constant array via populateConditionSelect()
+  // and call it both on init AND on reset, so the dropdown always has its full
+  // option list regardless of how many cards have been posted in a row.
+  const CONDITIONS = [
+    { value: "NM", label: "NM" },
+    { value: "LP", label: "LP" },
+    { value: "MP", label: "MP" },
+    { value: "HP", label: "HP" },
+    { value: "D",  label: "D"  },
+  ];
+
+  // Rebuild the Condition <select> from CONDITIONS, preserving the leading
+  // "please select" placeholder. Optionally restore a previously-selected value.
+  function populateConditionSelect(keepValue) {
+    if (!conditionSel) return;
+    const prev = (typeof keepValue === "string") ? keepValue : "";
+    conditionSel.innerHTML = "";
+    const ph = document.createElement("option");
+    ph.value = "";
+    ph.textContent = "please select";
+    conditionSel.appendChild(ph);
+    CONDITIONS.forEach(c => {
+      const o = document.createElement("option");
+      o.value = c.value;
+      o.textContent = c.label;
+      conditionSel.appendChild(o);
+    });
+    // Restore a real prior selection if it still exists; else placeholder.
+    if (prev && CONDITIONS.some(c => c.value === prev)) {
+      conditionSel.value = prev;
+    } else {
+      conditionSel.selectedIndex = 0;
+    }
+  }
+
   // Submit guard — prevents double-posting on rapid clicks
   let inFlight = false;
 
@@ -153,14 +196,11 @@
     } else {
       const m = document.getElementById("successModal");
       if (!m) return;
-      // UI-7: aria-hidden focus violation fix — if focus is currently inside
-      // the modal we are about to hide, blur it so the browser doesn't warn
-      // about "Blocked aria-hidden on an element because its descendant
-      // retained focus." Then return focus to <body> as a neutral fallback.
-      if (m.contains(document.activeElement)) {
-        try { document.activeElement.blur(); } catch (_) {}
-        try { document.body.focus(); } catch (_) {}
-      }
+      // v16 (#27): move focus out of the modal BEFORE setting aria-hidden="true"
+      // (shared helper handles the body-tabindex dance). Prevents Chrome's
+      // "Blocked aria-hidden ... descendant retained focus" WCAG violation.
+      if (window.UI?.moveFocusOutOf) window.UI.moveFocusOutOf(m);
+      else if (m.contains(document.activeElement)) { try { document.activeElement.blur(); } catch (_) {} }
       m.classList.remove("is-open");
       m.setAttribute("aria-hidden", "true");
     }
@@ -214,13 +254,13 @@
   }
   function closeCodeConfirmModal() {
     if (!codeModal) return;
-    // UI-7: aria-hidden focus violation fix — blur any focused descendant
-    // BEFORE we set aria-hidden="true", otherwise the browser will log:
-    // "Blocked aria-hidden on an element because its descendant retained focus."
-    if (codeModal.contains(document.activeElement)) {
-      try { document.activeElement.blur(); } catch (_) {}
-      try { document.body.focus(); } catch (_) {}
-    }
+    // v16 (#27): the flagged violation was <button#codeConfirmConfirmBtn>
+    // retaining focus inside <div#codeConfirmModal> at the moment we set
+    // aria-hidden="true". Move focus OUT first via the shared helper (which
+    // reliably parks focus on <body>), THEN hide. Falls back to a plain blur
+    // if the helper isn't present.
+    if (window.UI?.moveFocusOutOf) window.UI.moveFocusOutOf(codeModal);
+    else if (codeModal.contains(document.activeElement)) { try { document.activeElement.blur(); } catch (_) {} }
     codeModal.classList.add("hidden");
     codeModal.setAttribute("aria-hidden", "true");
   }
@@ -320,7 +360,10 @@
 
     resetSelect(setSel);
     resetSelect(raritySel);
-    resetSelect(conditionSel);
+    // v16 (#42): Condition is NOT a dynamic select — rebuild it from the
+    // constant CONDITIONS list instead of letting resetSelect() strip every
+    // option down to the placeholder (which left it empty on the 2nd card).
+    populateConditionSelect();
 
     State.selectedSetName   = null;
     State.selectedRarity    = null;
@@ -465,5 +508,10 @@
 
   if (confirmBtn) confirmBtn.disabled = true;
 
-  // CONSOLE-OFF v13.4 console.log("[confirm] confirm.js initialized :: v13.4");
+  // v16 (#42): populate Condition from the constant list on initial load so the
+  // dropdown is authoritative from the start (and identical to its post-reset
+  // state), making the static index.html <option>s a redundant fallback only.
+  populateConditionSelect();
+
+  // CONSOLE-OFF v13.4 console.log("[confirm] confirm.js initialized :: v16 (#42 condition repopulate)");
 })();

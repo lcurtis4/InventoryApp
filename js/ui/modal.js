@@ -3,6 +3,31 @@
   window.UI = window.UI || {};
   const $ = (id) => document.getElementById(id);
 
+  // v16 (#27 aria-hidden focus violation): shared, robust helper to move focus
+  // OUT of a container BEFORE we set aria-hidden="true" on it. Chrome blocks
+  // aria-hidden on an ancestor of the focused element and logs a WCAG warning.
+  // Plain document.body.focus() is unreliable (body isn't focusable unless it
+  // has a tabindex), so we temporarily make body focusable, move focus there,
+  // then clean up. Exposed on window.UI so confirm.js reuses the SAME logic.
+  function moveFocusOutOf(container) {
+    try {
+      const active = document.activeElement;
+      if (!container || !active || !container.contains(active)) return;
+      // Blur the focused descendant first.
+      try { active.blur(); } catch (_) {}
+      // Move focus to <body> via a temporary tabindex so screen-reader users
+      // land on a neutral, non-hidden element instead of nowhere.
+      const body = document.body;
+      if (body) {
+        const hadTabindex = body.hasAttribute("tabindex");
+        if (!hadTabindex) body.setAttribute("tabindex", "-1");
+        try { body.focus({ preventScroll: true }); } catch (_) { try { body.focus(); } catch (_) {} }
+        if (!hadTabindex) body.removeAttribute("tabindex");
+      }
+    } catch (_) {}
+  }
+  window.UI.moveFocusOutOf = moveFocusOutOf;
+
   function resumeScanningFromModalClose() {
     try { window.Scanner.resume(); } catch (_) {}
     // Flip the Pause/Resume toggle back to "Pause Scanning"
@@ -34,10 +59,8 @@
       // Otherwise Chrome logs: "Blocked aria-hidden on an element because
       // its descendant retained focus." Move focus to <body> as a neutral
       // fallback so keyboard users don't lose their place entirely.
-      if (m.contains(document.activeElement)) {
-        try { document.activeElement.blur(); } catch (_) {}
-        try { document.body.focus(); } catch (_) {}
-      }
+      // v16 (#27): move focus out BEFORE aria-hidden="true" (shared helper).
+      moveFocusOutOf(m);
       m.classList.remove("is-open");
       m.setAttribute("aria-hidden", "true");
       document.documentElement.style.overflow = "";
