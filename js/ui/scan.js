@@ -606,19 +606,20 @@
       return;
     }
 
-    // Multiple candidates → picker
-    const modeLabel = scanMode === "code"
-      ? `Code "${primaryCode || codes.join("/")}" — ${candidates.length} printing(s):`
-      : `${candidates.length} match(es) — choose:`;
-    setAutoStatus(modeLabel);
-
-    hideCaptureConfirmBar();
-    showCandidatesPicker(candidates, primaryCode, (picked) => {
-      applyCodeCandidate(picked, primaryCode || picked.set_code || "");
-      if (scanMode === "code") setMatchSource("exact-code", picked.set_code || primaryCode);
-      else setMatchSource("name-fallback", scannedText || "");
-      showCaptureConfirmBar(picked, picked.set_code ? `${picked.set_code} · ${picked.set_rarity || ""}` : null);
-    }, doRescan);
+    // #55: Multiple candidates → auto-pick the top match and route it straight
+    // into the single Accept & Confirm bar (no two-step tile-picker). Rescan on
+    // the confirm bar is the escape hatch if the top match is wrong; Manual Name
+    // override remains available. The legacy picker (showCandidatesPicker) is
+    // kept in code for back-compat but is no longer shown in the normal flow.
+    hideCandidatesPicker();
+    applyCodeCandidate(best, primaryCode || best.set_code || "");
+    if (scanMode === "code") setMatchSource("exact-code", best.set_code || primaryCode);
+    else setMatchSource("name-fallback", scannedText || "");
+    const bestLabel = best.set_code
+      ? `${best.set_code} · ${best.set_rarity || ""}`.trim()
+      : (best.set_rarity || "");
+    setAutoStatus(`Found: ${best.name}. Choose condition + qty, then confirm (or Rescan).`);
+    showCaptureConfirmBar(best, bestLabel || null);
   }
 
   // ── Bind UI actions ────────────────────────────────────────────────────────────
