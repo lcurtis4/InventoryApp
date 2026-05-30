@@ -313,14 +313,26 @@ to the live API on a miss.
   because the full DB is several MB — past the ~5MB string cap). Object store
   `cards` keyed on `nameLower`; a `meta` store holds the loaded manifest so
   re-imports are skipped when the version is unchanged.
-- **Snapshot file:** `snapshots/cards-<version>.json` (versioned by UTC build
-  date), described by `snapshots/manifest.json`
+- **Snapshot file:** `snapshots/cards-<version>.json`, described by
+  `snapshots/manifest.json`
   (`{ schema, version, snapshot, count, builtAt, sha256 }`).
+- **Versioning (content-derived).** `version` is `YYYY-MM-DD-<hash8>` — the UTC
+  build date plus the first 8 hex of a SHA-256 over the (sorted) card array. It
+  is **derived from the content**, not just the date, which fixes a same-day
+  no-op refresh bug (#52): a date-only version meant two builds on the same UTC
+  day shared one version string, so a manual/`workflow_dispatch` refresh that
+  pulled *new* data still matched the client's stored version and was silently
+  skipped (the client's `storedVersion === wantVersion` short-circuit served the
+  stale cache). With a content-derived version: identical content on the same
+  day ⇒ identical version (correctly detected as no-change and skipped); changed
+  content on the same day ⇒ a different version ⇒ the client applies the update.
+  The build also **asserts** the version advanced whenever content changed, so a
+  collision can never produce a self-referential diff (`fromVersion === toVersion`).
 - **Snapshot schema (v1):**
   ```json
   {
     "schema": 1,
-    "version": "YYYY-MM-DD",
+    "version": "YYYY-MM-DD-<hash8>",
     "builtAt": "<ISO8601>",
     "count": 14371,
     "cards": [
@@ -352,7 +364,9 @@ node scripts/build_card_db.mjs --in dump.json   # build from a saved API dump
   appends `snapshots/CHANGELOG.md`, updates `manifest.json` (now carrying a
   `diff: { fromVersion, patch }` hint), and the workflow commits the result.
 
-On the client, `CardDb.ready()` compares the stored version to the manifest:
+On the client, `CardDb.ready()` compares the stored version to the manifest.
+Because the version is content-derived, "same version" now reliably means "same
+content," so the short-circuit is safe:
 
 - Same version → serve cache (no work).
 - Manifest ships a `diff` whose `fromVersion` matches the stored version →
@@ -400,7 +414,8 @@ current:
 
 - **What it shows.** `Card DB <version> · <count> cards · updated <relative time>` —
   e.g. `Card DB May 30, 2026 · 14,371 cards · updated just now`. The version is the
-  manifest `version` (a `YYYY-MM-DD` snapshot date) rendered as a readable date, the
+  manifest `version` (`YYYY-MM-DD-<hash8>`); only the date portion is rendered as a
+  readable date (the `-<hash8>` suffix is kept in the tooltip), the
   count is the manifest `count`, and the update time comes from
   `state.lastSuccessAt` (falling back to the manifest `builtAt`) shown as a relative
   time ("5 min ago", "3 days ago", …).

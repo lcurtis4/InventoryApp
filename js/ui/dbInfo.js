@@ -1,7 +1,8 @@
 // dbInfo.js (#53) — surface the local Card DB's freshness in the footer.
 //
 // Shows, in one unobtrusive line:
-//   • DB version      (manifest.version, a YYYY-MM-DD snapshot date)
+//   • DB version      (manifest.version, "YYYY-MM-DD-<hash8>"; the date portion
+//                      is rendered as a readable date, full version in tooltip)
 //   • card count      (manifest.count)
 //   • last updated    (state.lastSuccessAt, else manifest.builtAt) as relative time
 //   • a subtle ⚠ warning when the most recent refresh FAILED (state.lastFailureAt
@@ -18,10 +19,13 @@
 
   function el() { return document.getElementById(EL_ID); }
 
-  // "2026-05-30" → "May 30, 2026". Falls back to the raw string if unparseable.
+  // "2026-05-30-1a2b3c4d" → "May 30, 2026". The version is content-derived
+  // (date + "-" + content-hash prefix, #52); we render only the date portion as
+  // a readable date and keep the full version in the tooltip. Falls back to the
+  // raw string if the leading date can't be parsed.
   function fmtVersion(v) {
     if (!v) return "";
-    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v));
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
     if (!m) return String(v);
     var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
     if (isNaN(d.getTime())) return String(v);

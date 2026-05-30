@@ -12,7 +12,10 @@
 // SCHEMA (snapshot file):
 //   {
 //     "schema": 1,
-//     "version": "YYYY-MM-DD",          // build date (UTC), source of truth for freshness
+//     "version": "YYYY-MM-DD-<hash8>",  // UTC build date + first 8 hex of the
+//                                       // content hash — content-derived so a
+//                                       // same-day refresh with NEW data gets a
+//                                       // new version (avoids no-op refresh, #52)
 //     "builtAt": "<ISO8601>",
 //     "count": <int>,                   // number of card records
 //     "cards": [
@@ -200,7 +203,6 @@ async function main() {
   if (!raw.length) throw new Error('No cards returned from source — refusing to write an empty snapshot.');
 
   const cards = toCompact(raw);
-  const version = utcDateStamp();
   const builtAt = new Date().toISOString();
 
   await mkdir(args.out, { recursive: true });
@@ -212,6 +214,13 @@ async function main() {
   const nextHash = contentHash(cards);
   const prevHash = prevCards.length ? contentHash(prevCards) : null;
 
+  // Content-derived, monotonic version (#52): date + first 8 hex of the content
+  // hash. Same content on the same UTC day ⇒ identical version (correctly
+  // skipped as no-change below); changed content on the same day ⇒ a DIFFERENT
+  // version, so the client's `storedVersion === wantVersion` short-circuit
+  // applies the update instead of silently no-op'ing on a same-day refresh.
+  const version = `${utcDateStamp()}-${nextHash.slice(0, 8)}`;
+
   // No content change → skip publishing a new version (#51: "only changed
   // records are applied"; nothing changed means nothing to apply). The
   // workflow keys its commit step off this exit signal.
@@ -219,6 +228,18 @@ async function main() {
     console.log(`[build] no card changes since ${previous.manifest.version} — skipping new snapshot.`);
     console.log('::no-changes::'); // machine-readable marker for CI
     return;
+  }
+
+  // Content changed ⇒ the version MUST advance. A collision here would resurrect
+  // the same-day no-op bug (#52): the client would see an unchanged version and
+  // skip the new data. Since the version embeds the content hash this can only
+  // happen if the hash collided, but assert it explicitly to fail loudly.
+  if (previous?.manifest?.version && version === previous.manifest.version) {
+    throw new Error(
+      `[build] version collision: content changed but new version "${version}" ` +
+      `equals the previously published version. Refusing to publish a ` +
+      `self-referential update (would no-op on the client).`
+    );
   }
 
   const snapshot = { schema: 1, version, builtAt, count: cards.length, cards };
@@ -231,6 +252,9 @@ async function main() {
 
   // Emit a small diff/patch sidecar so the client can apply only changes
   // (#51: "avoid full re-download when incremental update is possible").
+  // fromVersion/toVersion carry the content-derived version strings; the
+  // collision assertion above guarantees they can never be equal when content
+  // changed, so the diff is never self-referential (#52).
   const patch = {
     schema: 1,
     fromVersion: previous?.manifest?.version || null,
