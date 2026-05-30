@@ -194,6 +194,12 @@
     </div>
   </div>
 
+  <!-- #53: Local Card DB freshness indicator — version, count, last-updated,
+       and a subtle warning if the most recent refresh failed (stale data). -->
+  <footer class="app-footer" role="contentinfo">
+    <span id="dbInfo" class="db-info muted" aria-live="polite">Card DB: loading…</span>
+  </footer>
+
   <!-- Success Modal -->
   <div id="successModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
     <div class="modal__dialog" role="document" tabindex="-1">
@@ -257,6 +263,7 @@
   <script defer src="js/lookup/models.js"></script>
   <!-- v9.0: local name cache (must load before api.js so its short-circuit can see it) -->
   <script defer src="js/lookup/namesStore.js"></script>
+  <script defer src="js/lookup/cardDb.js"></script>
   <script defer src="js/lookup/api.js"></script>
   <script defer src="js/lookup/resolve.js"></script>
   <script defer src="js/lookup/codeSearch.js"></script>
@@ -280,6 +287,8 @@
   <script defer src="js/ui/index.js"></script>
   <!-- #58: show hosted git branch in the header badge (reads .git/HEAD) -->
   <script defer src="js/ui/branchBadge.js"></script>
+  <!-- #53: surface local Card DB version / count / last-updated in the footer -->
+  <script defer src="js/ui/dbInfo.js"></script>
 
   <!-- v9.0: warm the local namesStore on page load (background, non-blocking) -->
   <script>
@@ -292,6 +301,18 @@
           .catch(function (e) { console.warn('[boot] NamesStore.ready() failed:', e); });
       } else {
         console.warn('[boot] window.NamesStore not present at DOMContentLoaded');
+      }
+
+      // DB-1 (#50): warm the local Card DB (IndexedDB) on load — names +
+      // printings/sets/rarities. Replaces per-scan live lookups (epic #49).
+      if (window.CardDb && typeof window.CardDb.ready === 'function') {
+        window.CardDb.ready()
+          .then(function (info) {
+            console.log('[boot] CardDb ready —', info.count, 'cards, v=' + info.version);
+          })
+          .catch(function (e) { console.warn('[boot] CardDb.ready() failed:', e); });
+      } else {
+        console.warn('[boot] window.CardDb not present at DOMContentLoaded');
       }
     });
   </script>

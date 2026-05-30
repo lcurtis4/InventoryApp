@@ -1,0 +1,61 @@
+name: Card DB Weekly Refresh
+
+# DB-2 (#51): rebuild the local card DB snapshot once per week and commit it
+# only when the dataset actually changed. The client (cardDb.js) then applies
+# the new snapshot — incrementally via the diff sidecar when possible.
+
+on:
+  schedule:
+    # Mondays 08:00 UTC. Cron is in UTC; adjust if the cadence needs to shift.
+    - cron: "0 8 * * 1"
+  workflow_dispatch: # allow manual refresh from the Actions tab
+
+permissions:
+  contents: write # needs to commit the refreshed snapshot back to the repo
+
+concurrency:
+  group: card-db-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+
+      - name: Rebuild card DB snapshot (diff vs current)
+        id: build
+        run: |
+          set -o pipefail
+          node scripts/build_card_db.mjs | tee build.log
+          if grep -q "::changed::" build.log; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit refreshed snapshot
+        if: steps.build.outputs.changed == 'true'
+        # checkout runs with persist-credentials: false (zizmor artipacked), so
+        # the commit-back push authenticates explicitly via GITHUB_TOKEN here.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add snapshots/
+          VERSION=$(node -p "require('./snapshots/manifest.json').version")
+          git commit -m "chore(db): weekly card DB refresh ${VERSION} (#51)"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Report no-op
+        if: steps.build.outputs.changed != 'true'
+        run: echo "No card changes this week — snapshot unchanged, nothing committed."

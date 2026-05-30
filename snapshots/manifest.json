@@ -1,1 +1,9 @@
-{ "version": "2025-09-30a", "snapshot": "names-2025-09-30.jsonl" }
+{
+  "schema": 1,
+  "version": "2026-05-30-b0113d81",
+  "snapshot": "cards-2026-05-30-b0113d81.json",
+  "count": 14371,
+  "builtAt": "2026-05-30T06:53:47.387Z",
+  "sha256": "8f281c49e0412561e6584653159e3a32ee0adf53d42ddff8050cac8b418eabbd",
+  "diff": null
+}

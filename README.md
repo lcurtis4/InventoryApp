@@ -287,6 +287,149 @@ window.APP_CONFIG = {
 
 The Apps Script endpoint and secret are **not modified** by v8.2.
 
+Optional Card-DB key (DB-1 / #50):
+
+```js
+window.APP_CONFIG = {
+  // ...
+  CARD_DB_BASE: "snapshots/", // where manifest.json + card snapshot live.
+                              // Defaults to the shipped local folder; point at
+                              // a CDN base to serve a remote snapshot (#51).
+};
+```
+
+---
+
+## Local Card DB (DB-1 — #50)
+
+Name → printings/sets/rarities lookups resolve against a **local card database**
+instead of a per-scan live YGOPRODeck call (epic #49). `js/lookup/api.js`
+(`fetchCardSetsAndRarities`) consults the local DB first and only falls through
+to the live API on a miss.
+
+### Storage format
+
+- **Runtime store:** IndexedDB database `ygoCardDb` (chosen over `localStorage`
+  because the full DB is several MB — past the ~5MB string cap). Object store
+  `cards` keyed on `nameLower`; a `meta` store holds the loaded manifest so
+  re-imports are skipped when the version is unchanged.
+- **Snapshot file:** `snapshots/cards-<version>.json`, described by
+  `snapshots/manifest.json`
+  (`{ schema, version, snapshot, count, builtAt, sha256 }`).
+- **Versioning (content-derived).** `version` is `YYYY-MM-DD-<hash8>` — the UTC
+  build date plus the first 8 hex of a SHA-256 over the (sorted) card array. It
+  is **derived from the content**, not just the date, which fixes a same-day
+  no-op refresh bug (#52): a date-only version meant two builds on the same UTC
+  day shared one version string, so a manual/`workflow_dispatch` refresh that
+  pulled *new* data still matched the client's stored version and was silently
+  skipped (the client's `storedVersion === wantVersion` short-circuit served the
+  stale cache). With a content-derived version: identical content on the same
+  day ⇒ identical version (correctly detected as no-change and skipped); changed
+  content on the same day ⇒ a different version ⇒ the client applies the update.
+  The build also **asserts** the version advanced whenever content changed, so a
+  collision can never produce a self-referential diff (`fromVersion === toVersion`).
+- **Snapshot schema (v1):**
+  ```json
+  {
+    "schema": 1,
+    "version": "YYYY-MM-DD-<hash8>",
+    "builtAt": "<ISO8601>",
+    "count": 14371,
+    "cards": [
+      { "id": 46986414, "name": "Dark Magician",
+        "sets": [ { "set_name": "...", "set_code": "...", "set_rarity": "..." } ] }
+    ]
+  }
+  ```
+- **Size:** ~4.4 MB for ~14,400 cards (~13,900 with printings) as of the
+  2026-05-30 build. Image refs are **deferred** (#74) to keep this small.
+
+### Building / refreshing the snapshot
+
+```bash
+node scripts/build_card_db.mjs              # fetch live + write snapshot + manifest
+node scripts/build_card_db.mjs --in dump.json   # build from a saved API dump
+```
+
+### Weekly auto-refresh (DB-2 — #51)
+
+`.github/workflows/card-db-refresh.yml` runs the build **every Monday 08:00 UTC**
+(and on-demand via the Actions tab). The build:
+
+- **Diffs** the freshly-fetched dataset against the committed snapshot.
+- If **nothing changed**, it emits `::no-changes::` and the workflow commits
+  nothing — no churn.
+- If anything changed, it writes a new `cards-<version>.json`, a
+  `cards-diff-<version>.json` **patch sidecar** (added / updated / removed),
+  appends `snapshots/CHANGELOG.md`, updates `manifest.json` (now carrying a
+  `diff: { fromVersion, patch }` hint), and the workflow commits the result.
+
+On the client, `CardDb.ready()` compares the stored version to the manifest.
+Because the version is content-derived, "same version" now reliably means "same
+content," so the short-circuit is safe:
+
+- Same version → serve cache (no work).
+- Manifest ships a `diff` whose `fromVersion` matches the stored version →
+  **apply only the changed records** to IndexedDB (add/update/delete) — no full
+  re-download.
+- Otherwise (first run, or skipped several versions) → full snapshot import.
+
+The committed baseline snapshot has `diff: null` (no prior version); the first
+diff is produced by the next weekly run.
+
+### Refresh failure handling & last-good fallback (DB-3 — #52)
+
+A failed or corrupt weekly refresh must **never** corrupt or wipe the user's
+locally-stored card DB — the app always keeps the last-good data.
+
+- **Integrity verification.** `manifest.json` carries a `sha256` computed by the
+  build over the exact bytes of `cards-<version>.json`. Before applying a
+  downloaded snapshot, `CardDb` fetches the snapshot as raw text, hashes it with
+  the browser **SubtleCrypto** API (`crypto.subtle.digest('SHA-256', …)`), and
+  compares hex digests. The build (`createHash('sha256').update(body)`) and the
+  client hash the **identical UTF-8 bytes**, so the digests match exactly.
+- **Last-good fallback.** Nothing is written to IndexedDB until the hash checks
+  out. On a mismatch (or any fetch/parse/import error) the update is **aborted**
+  and the existing data keeps serving. The replace itself happens in a single
+  IndexedDB transaction (`clear()` + `put()` inside one `_bulkPut`), so it is
+  atomic — a mid-import abort rolls back and the prior data survives.
+  `CardDb.forceReload()` likewise never pre-wipes the store.
+- **Failure/success state.** A separate `meta` record (`k: "state"`) tracks
+  `{ lastSuccessAt, lastSuccessVersion, lastFailureAt, lastFailureReason,
+  lastFailureVersion }`. A failed refresh records the failure **without**
+  overwriting the last-good `manifest` record; `CardDb.refreshState()` exposes
+  this for the UI surfacing planned in #53.
+- **Atomic publish (build side).** The build writes `cards-<version>.json` and
+  the diff sidecar to `.tmp` files, `rename()`s them into place, and writes
+  `manifest.json` **last** — so a crash mid-publish can't leave the manifest
+  pointing at a partial snapshot. `loadRawCards` also retries the upstream API
+  with exponential backoff (4 attempts) so a single flaky fetch doesn't fail the
+  weekly run.
+
+### DB version / last-updated UI indicator (DB-4 — #53)
+
+A small footer line (`#dbInfo`, populated by `js/ui/dbInfo.js`) surfaces how fresh
+the local card DB is, so the user can tell at a glance whether their data is
+current:
+
+- **What it shows.** `Card DB <version> · <count> cards · updated <relative time>` —
+  e.g. `Card DB May 30, 2026 · 14,371 cards · updated just now`. The version is the
+  manifest `version` (`YYYY-MM-DD-<hash8>`); only the date portion is rendered as a
+  readable date (the `-<hash8>` suffix is kept in the tooltip), the
+  count is the manifest `count`, and the update time comes from
+  `state.lastSuccessAt` (falling back to the manifest `builtAt`) shown as a relative
+  time ("5 min ago", "3 days ago", …).
+- **Stale-data warning.** If the most recent refresh **failed**
+  (`state.lastFailureAt` is newer than `lastSuccessAt`), the line appends a subtle
+  amber warning — `⚠ last refresh failed — showing last-good data from <version>` —
+  so the user knows they're being served the last-good snapshot. The failure reason
+  is exposed in the element's `title` tooltip.
+- **Wiring.** The indicator reads from the existing `CardDb` API after
+  `CardDb.ready()` resolves: `CardDb.manifest()` (`{ version, builtAt, count,
+  sha256 }`, added in #53) for the snapshot description and `CardDb.refreshState()`
+  for the health record. Before the DB is ready it shows `Card DB: loading…`, and
+  it degrades to `Card DB: unavailable` if the module or data can't be read.
+
 ---
 
 ## Troubleshooting
@@ -305,6 +448,13 @@ The Apps Script endpoint and secret are **not modified** by v8.2.
 ---
 
 ## Developer Notes
+
+### Code review & CI
+
+Pull requests get an automated AI review from **CodeRabbit** before human review
+— see [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup and the
+[`.coderabbit.yaml`](.coderabbit.yaml) config. The **Sprint Progress Tracker**
+workflow keeps the PM board in sync with issue state.
 
 ### Files changed in v8.2
 

@@ -1,0 +1,56 @@
+# CodeRabbit configuration — automated AI code review on PRs
+# Docs: https://docs.coderabbit.ai/getting-started/configure-coderabbit
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: en-US
+
+# Show the early-access feature set; harmless if unavailable on the plan.
+early_access: false
+
+reviews:
+  # "chill" keeps reviews focused on real issues without nitpick noise.
+  # Switch to "assertive" for stricter, higher-volume feedback.
+  profile: chill
+
+  # Require a minimum confidence before posting a comment to reduce noise.
+  request_changes_workflow: false
+
+  # PR summary + walkthrough so each PR gets a senior-dev-style overview.
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+
+  # Auto-review every PR as it opens / updates.
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+
+  # Skip generated / data-snapshot files that don't benefit from code review.
+  path_filters:
+    - "!snapshots/**"
+    - "!**/*.jsonl"
+    - "!docs/**"
+
+  # Per-area guidance so reviews match this project's structure.
+  path_instructions:
+    - path: "js/**"
+      instructions: >-
+        Vanilla ES modules (no bundler). Flag accidental globals, missing
+        `import`/`export`, and DOM access before elements exist. Watch for
+        CORS-sensitive fetches and YGOPRODeck API calls that should move to
+        the local card DB (Sprint 6). Prefer early-exit and clear logging.
+    - path: "AppsScript_Code.gs"
+      instructions: >-
+        Google Apps Script backend. Check for unhandled exceptions in
+        doGet/doPost, missing input validation, and anything that could leak
+        the Sheet ID or break the JSONP/CORS contract with the front end.
+    - path: ".github/**"
+      instructions: >-
+        CI / automation. Verify least-privilege `permissions`, pinned action
+        versions, and that secrets are never echoed to logs.
+
+chat:
+  auto_reply: true
