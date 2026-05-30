@@ -306,6 +306,13 @@ The Apps Script endpoint and secret are **not modified** by v8.2.
 
 ## Developer Notes
 
+### Code review & CI
+
+Pull requests get an automated AI review from **CodeRabbit** before human review
+— see [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup and the
+[`.coderabbit.yaml`](.coderabbit.yaml) config. The **Sprint Progress Tracker**
+workflow keeps the PM board in sync with issue state.
+
 ### Files changed in v8.2
 
 | File | Change |
