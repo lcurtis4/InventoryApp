@@ -28,7 +28,8 @@
     </div>
   </header>
 
-  <p class="app-subtitle muted">Code-first scan: reads set code (bottom of card) + name simultaneously; image assist re-ranks candidates.</p>
+  <!-- #91 (EPIC-87, AC-014): copy updated post-EPIC-63 — automatic scan is name-only. -->
+  <p class="app-subtitle muted">Name-first scan: reads the card name automatically; image assist re-ranks candidates. Set code can be entered manually.</p>
 
   <div class="layout">
     <!-- LEFT: Camera panel -->
@@ -115,7 +116,8 @@
         <!-- v8: Manual Code Entry -->
         <div class="group">
           <h2>Set Code</h2>
-          <div class="muted code-help">Primary scan method — reads set code from bottom-left of card (format like <code>SETCD-ENxxx</code>). You can also type a code directly below.</div>
+          <!-- #91 (EPIC-87, AC-014): set code is manual-entry only, not a scan method. -->
+          <div class="muted code-help">Optional manual lookup — type a set code (format like <code>SETCD-ENxxx</code>) to find a printing directly. Automatic scanning reads the card name.</div>
           <div class="row code-row">
             <input id="manualCode" type="text"
               placeholder="e.g. SETCD-ENxxx"
