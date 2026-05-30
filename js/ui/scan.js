@@ -291,6 +291,8 @@
     card.type = "button";
     card.className = "cand-card";
     card.setAttribute("aria-label", `Select ${c.name}`);
+    // Leroy F1/F2: tiles act as a single-choice toggle group; start unpressed.
+    card.setAttribute("aria-pressed", "false");
 
     const imgUrl = c.imageUrl || (c.id ? `https://images.ygoprodeck.com/images/cards_small/${c.id}.jpg` : null);
     if (imgUrl) {
@@ -363,6 +365,9 @@
 
     // #90: track the currently-selected tile + candidate. Confirm is disabled
     //   until the user picks one (no silent auto-pick).
+    // confirmBtn is declared below and only referenced from the click callback,
+    // which fires long after this function returns (deferred use is safe).
+    let confirmBtn  = null;
     let selectedCand = null;
     let selectedEl   = null;
 
@@ -370,7 +375,12 @@
     list.className = "cand-list";
     candidates.forEach(c => list.appendChild(makeCandCard(c, scannedCode, (picked, cardEl) => {
       selectedCand = picked;
-      if (selectedEl) selectedEl.classList.remove("cand-card--selected");
+      // Leroy F2: clear ARIA + class on the previously-selected tile so screen
+      //   readers don't report two "pressed" tiles after switching selection.
+      if (selectedEl) {
+        selectedEl.classList.remove("cand-card--selected");
+        selectedEl.setAttribute("aria-pressed", "false");
+      }
       selectedEl = cardEl;
       cardEl.classList.add("cand-card--selected");
       cardEl.setAttribute("aria-pressed", "true");
@@ -383,7 +393,7 @@
 
     // #90 (AC-011/AC-012): single in-picker Confirm button. Commits the chosen
     //   printing in one click — no separate codeConfirmModal afterward.
-    const confirmBtn = document.createElement("button");
+    confirmBtn = document.createElement("button");
     confirmBtn.type = "button";
     confirmBtn.className = "primary cand-confirm";
     confirmBtn.textContent = "Confirm";
