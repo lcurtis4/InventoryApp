@@ -443,6 +443,23 @@
       return buildSetsAndRaritiesFromCard(hit);
     }
 
+    // DB-1 (#50): LOCAL CARD DB FIRST. The local snapshot is the source of
+    // truth for name → printings/sets/rarities; only fall through to the live
+    // API when the local DB misses (older snapshot / brand-new card). #52 will
+    // formalize the failure/fallback policy.
+    try {
+      if (window.CardDb && typeof window.CardDb.lookupByName === 'function') {
+        const local = await window.CardDb.lookupByName(cardName);
+        if (local && Array.isArray(local.sets) && local.sets.length) {
+          indexByName([{ id: local.id, name: local.name, sets: local.sets }]);
+          // CONSOLE-OFF v12 console.log('[api] fetchCardSetsAndRarities: LOCAL DB hit for', cardName, '→', local.sets.length, 'set(s)');
+          return buildSetsAndRaritiesFromCard(local);
+        }
+      }
+    } catch (e) {
+      // CONSOLE-OFF v12 console.warn('[api] local CardDb lookup threw; falling through to API:', e);
+    }
+
     // v9.2: Always try exact `?name=` first — it's the most reliable path and
     // returns card_sets in the default response. This is the workhorse for the
     // safety-net call from lookup.js when a synthetic candidate landed in state.

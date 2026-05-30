@@ -287,6 +287,61 @@ window.APP_CONFIG = {
 
 The Apps Script endpoint and secret are **not modified** by v8.2.
 
+Optional Card-DB key (DB-1 / #50):
+
+```js
+window.APP_CONFIG = {
+  // ...
+  CARD_DB_BASE: "snapshots/", // where manifest.json + card snapshot live.
+                              // Defaults to the shipped local folder; point at
+                              // a CDN base to serve a remote snapshot (#51).
+};
+```
+
+---
+
+## Local Card DB (DB-1 — #50)
+
+Name → printings/sets/rarities lookups resolve against a **local card database**
+instead of a per-scan live YGOPRODeck call (epic #49). `js/lookup/api.js`
+(`fetchCardSetsAndRarities`) consults the local DB first and only falls through
+to the live API on a miss.
+
+### Storage format
+
+- **Runtime store:** IndexedDB database `ygoCardDb` (chosen over `localStorage`
+  because the full DB is several MB — past the ~5MB string cap). Object store
+  `cards` keyed on `nameLower`; a `meta` store holds the loaded manifest so
+  re-imports are skipped when the version is unchanged.
+- **Snapshot file:** `snapshots/cards-<version>.json` (versioned by UTC build
+  date), described by `snapshots/manifest.json`
+  (`{ schema, version, snapshot, count, builtAt, sha256 }`).
+- **Snapshot schema (v1):**
+  ```json
+  {
+    "schema": 1,
+    "version": "YYYY-MM-DD",
+    "builtAt": "<ISO8601>",
+    "count": 14371,
+    "cards": [
+      { "id": 46986414, "name": "Dark Magician",
+        "sets": [ { "set_name": "...", "set_code": "...", "set_rarity": "..." } ] }
+    ]
+  }
+  ```
+- **Size:** ~4.4 MB for ~14,400 cards (~13,900 with printings) as of the
+  2026-05-30 build. Image refs are **deferred** (#74) to keep this small.
+
+### Building / refreshing the snapshot
+
+```bash
+node scripts/build_card_db.mjs              # fetch live + write snapshot + manifest
+node scripts/build_card_db.mjs --in dump.json   # build from a saved API dump
+```
+
+The weekly auto-refresh (#51) re-runs this build and bumps the manifest version;
+`CardDb.ready()` then imports the new snapshot on next load.
+
 ---
 
 ## Troubleshooting

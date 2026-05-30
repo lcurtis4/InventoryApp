@@ -257,6 +257,7 @@
   <script defer src="js/lookup/models.js"></script>
   <!-- v9.0: local name cache (must load before api.js so its short-circuit can see it) -->
   <script defer src="js/lookup/namesStore.js"></script>
+  <script defer src="js/lookup/cardDb.js"></script>
   <script defer src="js/lookup/api.js"></script>
   <script defer src="js/lookup/resolve.js"></script>
   <script defer src="js/lookup/codeSearch.js"></script>
@@ -292,6 +293,18 @@
           .catch(function (e) { console.warn('[boot] NamesStore.ready() failed:', e); });
       } else {
         console.warn('[boot] window.NamesStore not present at DOMContentLoaded');
+      }
+
+      // DB-1 (#50): warm the local Card DB (IndexedDB) on load — names +
+      // printings/sets/rarities. Replaces per-scan live lookups (epic #49).
+      if (window.CardDb && typeof window.CardDb.ready === 'function') {
+        window.CardDb.ready()
+          .then(function (info) {
+            console.log('[boot] CardDb ready —', info.count, 'cards, v=' + info.version);
+          })
+          .catch(function (e) { console.warn('[boot] CardDb.ready() failed:', e); });
+      } else {
+        console.warn('[boot] window.CardDb not present at DOMContentLoaded');
       }
     });
   </script>
