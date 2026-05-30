@@ -392,6 +392,29 @@ locally-stored card DB — the app always keeps the last-good data.
   with exponential backoff (4 attempts) so a single flaky fetch doesn't fail the
   weekly run.
 
+### DB version / last-updated UI indicator (DB-4 — #53)
+
+A small footer line (`#dbInfo`, populated by `js/ui/dbInfo.js`) surfaces how fresh
+the local card DB is, so the user can tell at a glance whether their data is
+current:
+
+- **What it shows.** `Card DB <version> · <count> cards · updated <relative time>` —
+  e.g. `Card DB May 30, 2026 · 14,371 cards · updated just now`. The version is the
+  manifest `version` (a `YYYY-MM-DD` snapshot date) rendered as a readable date, the
+  count is the manifest `count`, and the update time comes from
+  `state.lastSuccessAt` (falling back to the manifest `builtAt`) shown as a relative
+  time ("5 min ago", "3 days ago", …).
+- **Stale-data warning.** If the most recent refresh **failed**
+  (`state.lastFailureAt` is newer than `lastSuccessAt`), the line appends a subtle
+  amber warning — `⚠ last refresh failed — showing last-good data from <version>` —
+  so the user knows they're being served the last-good snapshot. The failure reason
+  is exposed in the element's `title` tooltip.
+- **Wiring.** The indicator reads from the existing `CardDb` API after
+  `CardDb.ready()` resolves: `CardDb.manifest()` (`{ version, builtAt, count,
+  sha256 }`, added in #53) for the snapshot description and `CardDb.refreshState()`
+  for the health record. Before the DB is ready it shows `Card DB: loading…`, and
+  it degrades to `Card DB: unavailable` if the module or data can't be read.
+
 ---
 
 ## Troubleshooting

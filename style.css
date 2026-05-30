@@ -785,6 +785,25 @@ tbody td:last-child { text-align:center; }
 }
 
 /* ====================================================================== */
+/* #53: Local Card DB freshness footer                                      */
+/* ====================================================================== */
+.app-footer {
+  margin: var(--space-4) 0 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-neutral-200);
+  text-align: center;
+}
+.db-info {
+  font-size: var(--text-xs);
+  letter-spacing: 0.01em;
+}
+/* Stale-data state: subtle amber, no heavy banner — just enough to notice. */
+.db-info--warn {
+  color: var(--color-warn);
+  font-weight: 500;
+}
+
+/* ====================================================================== */
 /* v7: Top-3 Candidates Picker                                              */
 /* ====================================================================== */
 /* .candidates-picker visuals come from the .surface--subtle recipe above */

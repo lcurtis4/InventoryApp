@@ -26,6 +26,7 @@
 //   await CardDb.refreshState()           → { lastSuccessAt, lastSuccessVersion,
 //                                             lastFailureAt, lastFailureReason,
 //                                             lastFailureVersion } (#52/#53)
+//   await CardDb.manifest()               → { version, builtAt, count, sha256 } (#53)
 //
 // DESIGN NOTES
 //   • Idempotent load: we store the loaded manifest version in meta; if the
@@ -449,6 +450,18 @@
     return rest;
   }
 
+  // Stored manifest record for #53's UI ({ version, builtAt, count, sha256 }).
+  // Reads the persisted 'manifest' meta record so callers get the description of
+  // the data actually sitting in the cards store, even before _meta is warmed.
+  // Returns {} when nothing is stored yet.
+  async function manifest() {
+    const db = await _openDb();
+    const m = await _getMeta(db);
+    if (!m) return {};
+    const { k, ...rest } = m;
+    return rest;
+  }
+
   // Re-pull and re-import from the snapshot. Does NOT pre-wipe the store: the
   // re-import goes through _bulkPut, which clears + repopulates inside ONE
   // transaction only after the snapshot passes its sha256 integrity check. So a
@@ -458,5 +471,5 @@
     return ready({ force: true });
   }
 
-  window.CardDb = { ready, lookupByName, findBest, version, builtAt, count, forceReload, refreshState };
+  window.CardDb = { ready, lookupByName, findBest, version, builtAt, count, forceReload, refreshState, manifest };
 })();

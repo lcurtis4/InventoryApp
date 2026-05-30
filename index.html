@@ -194,6 +194,12 @@
     </div>
   </div>
 
+  <!-- #53: Local Card DB freshness indicator — version, count, last-updated,
+       and a subtle warning if the most recent refresh failed (stale data). -->
+  <footer class="app-footer" role="contentinfo">
+    <span id="dbInfo" class="db-info muted" aria-live="polite">Card DB: loading…</span>
+  </footer>
+
   <!-- Success Modal -->
   <div id="successModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
     <div class="modal__dialog" role="document" tabindex="-1">
@@ -281,6 +287,8 @@
   <script defer src="js/ui/index.js"></script>
   <!-- #58: show hosted git branch in the header badge (reads .git/HEAD) -->
   <script defer src="js/ui/branchBadge.js"></script>
+  <!-- #53: surface local Card DB version / count / last-updated in the footer -->
+  <script defer src="js/ui/dbInfo.js"></script>
 
   <!-- v9.0: warm the local namesStore on page load (background, non-blocking) -->
   <script>
