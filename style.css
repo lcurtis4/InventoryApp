@@ -489,8 +489,11 @@ tbody td:last-child { text-align:center; }
 .camwrap video { object-fit: cover; border-radius:10px; }
 #overlay { pointer-events:none; }
 
-/* ---------- Debug: always visible, fixed height ---------- */
+/* ---------- Debug / OCR preview ---------- */
+/* #89 (EPIC-87, AC-004): OCR preview (name-band crop) is hidden by default and
+   revealed on demand via Shift+D (#88) or the "Show OCR Preview" toggle. */
 .debug-section { margin-top:10px; }
+.debug-section.is-hidden { display:none; }
 .debug-canvas {
   width:100%;
   height:var(--debug-h);

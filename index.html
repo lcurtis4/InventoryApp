@@ -37,6 +37,11 @@
         <div class="controls">
           <button id="startBtn" class="primary">Start Camera</button>
           <button id="scanToggleBtn" class="secondary" style="display:none;" aria-pressed="false">Pause Scanning</button>
+          <!-- #89 (EPIC-87, AC-006): secondary reveal path for the OCR preview.
+               Primary path is Shift+D (#88, AC-005). Hidden by default (AC-004). -->
+          <button id="ocrPreviewToggleBtn" class="secondary" type="button"
+                  aria-pressed="false" aria-controls="debugSection"
+                  title="Toggle the name-band OCR preview (Shift+D)">Show OCR Preview</button>
           <span id="autoStatus" class="muted"></span>
         </div>
 
@@ -48,7 +53,10 @@
         <div id="camStatus" class="status"></div>
 
         <!-- v8.2: Debug panels — name-band crop (existing) + dedicated code-crop -->
-        <div class="debug-section">
+        <!-- #89 (EPIC-87, AC-004): OCR preview hidden by default. Revealed via
+             Shift+D (#88) or the "Show OCR Preview" toggle. The `is-hidden`
+             class controls visibility; JS toggles it. -->
+        <div class="debug-section is-hidden" id="debugSection">
           <label class="muted debug-label">Name band OCR crop</label>
           <canvas id="debugCanvas" class="debug-canvas"></canvas>
         </div>
@@ -279,6 +287,7 @@
   <script defer src="js/ui/lookup.js"></script>
   <script defer src="js/ui/scan.js"></script>
   <script defer src="js/ui/confirm.js"></script>
+  <script defer src="js/ui/ocrPreview.js"></script>
   <script defer src="js/ui/index.js"></script>
   <!-- #58: show hosted git branch in the header badge (reads .git/HEAD) -->
   <script defer src="js/ui/branchBadge.js"></script>
