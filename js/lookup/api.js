@@ -128,8 +128,35 @@
     if (/\s/.test(t)) return false; // multi-word fname → guaranteed 400 upstream
     return true;
   }
+  // v12 (#67): a raw OCR title is only worth sending to cardinfo.php?name= if it
+  // actually looks like a card name. A garbage fallback like "DY THE MAGIC ELF &l"
+  // used to be sent verbatim — the trailing "&l" injected a stray query param and
+  // the malformed/non-name string returned 400 Bad Request, logging a console
+  // error on every bad scan. Guard BEFORE the request so no 400 is ever emitted.
+  //   • must be ≥3 chars after trimming
+  //   • must contain at least 2 letters (reject pure-symbol / mostly-junk strings)
+  //   • must not be majority non-alphanumeric (reject "&&-l |" style residue)
   function isNameQueryable(s) {
-    return String(s || '').trim().length >= 3;
+    const t = String(s || '').trim();
+    if (t.length < 3) return false;
+    const letters = (t.match(/[A-Za-z]/g) || []).length;
+    if (letters < 2) return false;
+    const alnum = (t.match(/[A-Za-z0-9]/g) || []).length;
+    // Reject strings that are mostly punctuation/symbols (OCR icon residue).
+    if (alnum / t.length < 0.5) return false;
+    return true;
+  }
+
+  // v12 (#67): produce a safe ?name= query from a raw OCR title. We strip the
+  // characters that corrupt the request (notably '&', which injects a query
+  // param) and trailing OCR noise, but keep enough of the name for an exact
+  // match. Returns '' when nothing name-like survives (caller must skip).
+  function nameQueryFromRaw(raw) {
+    // Remove '&' and other URL-significant junk, collapse whitespace.
+    let t = String(raw || '').replace(/[&?#=]/g, ' ').replace(/\s+/g, ' ').trim();
+    // Drop trailing OCR icon/level residue ("&l", "68", "-e", etc.).
+    t = stripTrailingOcrNoise(t);
+    return isNameQueryable(t) ? t : '';
   }
 
   // Extra-hard sanitizer for fuzzy API (strip diacritics & odd chars)
@@ -381,12 +408,17 @@
     // default; we don't need misc fields for resolve.
 
     // 1) Exact name attempt (handles special chars)
-    // v11 (#27): isNameQueryable mirrors hasMinLen3 but documents the guard
-    // intent at the request site (skip empty/too-short to avoid upstream 400s).
+    // v12 (#67): build the exact query from a SANITIZED name, not the raw OCR
+    // string. The raw string can carry URL-significant junk (e.g. a trailing
+    // "&l") that injects a stray query param and makes cardinfo.php?name= return
+    // 400 Bad Request, spamming the console on every bad scan. nameQueryFromRaw
+    // strips that junk and returns '' for non-name garbage, in which case we
+    // skip the request entirely rather than emit a guaranteed 400.
     let out = [];
-    if (isNameQueryable(exact)) {
-      const urlExact = baseUrl + new URLSearchParams({ name: exact }).toString();
-      // CONSOLE-OFF v12 console.log("[api] exact-name attempt:", exact);
+    const exactQuery = nameQueryFromRaw(exact);
+    if (exactQuery) {
+      const urlExact = baseUrl + new URLSearchParams({ name: exactQuery }).toString();
+      // CONSOLE-OFF v12 console.log("[api] exact-name attempt:", exactQuery);
       const dataExact = await fetchJson(urlExact, { timeoutMs: 3000 });
       const listExact = Array.isArray(dataExact?.data) ? dataExact.data : [];
       // CONSOLE-OFF v12 console.log("[api] exact-name result:", listExact.length, "hit(s)");
