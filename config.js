@@ -17,14 +17,8 @@ window.APP_CONFIG = {
 
 // ── v8.2 runtime tuning (paste into DevTools console to adjust live) ─────────
 //
-// Code-crop geometry (codeOcr.js):
-//   window.ScannerParts.codeOcr.CODE_REGION.fromBottomFrac = 0.18;  // default
-//   window.ScannerParts.codeOcr.CODE_REGION.heightFrac     = 0.10;
-//   window.ScannerParts.codeOcr.CODE_REGION.widthFrac      = 0.65;
-//
-// Low-light thresholds (codeOcr.js — brightness/contrast of raw crop, 0–255):
-//   window.ScannerParts.codeOcr.LOW_BRIGHTNESS_THRESHOLD = 55;
-//   window.ScannerParts.codeOcr.LOW_CONTRAST_THRESHOLD   = 12;
+// (Set-code crop geometry + low-light threshold hints removed in #54 — the
+//  codeOcr.js module and its automatic set-code SCAN/OCR pipeline were retired.)
 //
 // Image-assist backend hook (future):
 //   window.ImageAssist.backendHook = async (dataUrl, candidates) => { ... };
