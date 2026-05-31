@@ -40,6 +40,23 @@
 
   const MIN_ACC = typeof State.MIN_ACCURACY === "number" ? State.MIN_ACCURACY : 80;
 
+  // Restore a <select> to a single canonical "please select" placeholder.
+  // Shared shape with confirm.js resetSelect + lookup.js makePlaceholder so the
+  // Set/Rarity dropdowns never end up blank (#86 + UAT follow-up).
+  function setPlaceholder(sel) {
+    if (!sel) return;
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+    const ph = document.createElement("option");
+    ph.value = "";
+    ph.textContent = "please select";
+    ph.disabled = true;
+    ph.selected = true;
+    sel.appendChild(ph);
+    sel.value = "";
+    if (sel.dataset) sel.dataset.populated = "0";
+    sel.classList.remove("needs-input");
+  }
+
   // ── Pause/Resume toggle ───────────────────────────────────────────────────────
   let isPaused = false;
   function setTogglePaused(paused) {
@@ -58,8 +75,15 @@
     if (el) el.textContent = msg;
   }
 
-  // ── Match-source status bar (v8.2) ────────────────────────────────────────────
+  // ── Match-source status bar ─────────────────────────────────────────────────
   // mode: "exact-code" | "code-unresolved" | "name-fallback" | "manual-code" | ""
+  //
+  // UAT round 5: the bar previously surfaced on every match — including the
+  // normal success/name-fallback cases — which was noisy and used outdated
+  // wording. It now ONLY renders for genuine errors (a scanned code that could
+  // not be resolved). All other modes are tracked silently so downstream state
+  // is unaffected, but no banner is shown.
+  const ERROR_MODES = { "code-unresolved": true };
   function setMatchSource(mode, detail) {
     const bar   = $("matchSourceBar");
     const label = $("matchSourceLabel");
@@ -67,24 +91,15 @@
     if (!bar || !label) return;
 
     const labels = {
-      "exact-code":       "✔ Exact set-code match",
-      "code-unresolved":  "⚠ Code scanned but not resolved — using name fallback",
-      "name-fallback":    "⚠ Name fallback (no code read)",
-      "manual-code":      "✔ Manual code lookup",
-      "":                 "",
-    };
-    const icons = {
-      "exact-code":      "●",
-      "code-unresolved": "●",
-      "name-fallback":   "●",
-      "manual-code":     "●",
-      "":                "●",
+      "code-unresolved": "⚠ Couldn’t read a set code — double-check Set & Rarity",
     };
 
-    bar.style.display = mode ? "" : "none";
-    bar.setAttribute("data-mode", mode || "");
-    if (label) label.textContent = (labels[mode] || mode) + (detail ? ` — ${detail}` : "");
-    if (icon)  icon.textContent  = icons[mode] || "●";
+    const show = !!ERROR_MODES[mode];
+    bar.style.display = show ? "" : "none";
+    bar.setAttribute("data-mode", show ? mode : "");
+    if (!show) { label.textContent = ""; return; }
+    label.textContent = (labels[mode] || mode) + (detail ? ` — ${detail}` : "");
+    if (icon) icon.textContent = "●";
   }
   window.UI.setMatchSource = setMatchSource;
 
@@ -99,7 +114,10 @@
     // conditionSelect entry to `false` here so no caller (current or future)
     // can re-introduce the stray highlight, and we proactively strip any
     // pre-existing highlight on it as a belt-and-suspenders guard.
-    const ids = { setSelect: opts.set, raritySelect: opts.rarity, conditionSelect: false, qty: opts.qty };
+    // #85 (EPIC-87, AC-001): Set dropdown is now treated the same way —
+    //   setSelect is forced to `false` so it can never receive the amber
+    //   highlight from any caller.
+    const ids = { setSelect: false, raritySelect: opts.rarity, conditionSelect: false, qty: opts.qty };
     for (const [id, needs] of Object.entries(ids)) {
       const el = $(id);
       if (!el) continue;
@@ -288,6 +306,8 @@
     card.type = "button";
     card.className = "cand-card";
     card.setAttribute("aria-label", `Select ${c.name}`);
+    // Leroy F1/F2: tiles act as a single-choice toggle group; start unpressed.
+    card.setAttribute("aria-pressed", "false");
 
     const imgUrl = c.imageUrl || (c.id ? `https://images.ygoprodeck.com/images/cards_small/${c.id}.jpg` : null);
     if (imgUrl) {
@@ -329,9 +349,13 @@
     }
     card.appendChild(confRow);
 
+    // #90 (EPIC-87, AC-010..013): selecting a tile no longer immediately
+    //   commits. It marks the tile as selected; the single in-picker Confirm
+    //   button (added in showCandidatesPicker) commits the selection. This
+    //   restores the legacy multi-option picker with exactly one confirm step
+    //   and no silent auto-pick.
     card.addEventListener("click", () => {
-      hideCandidatesPicker(); hideCaptureConfirmBar();
-      if (typeof onPick === "function") onPick(c);
+      if (typeof onPick === "function") onPick(c, card);
     });
     return card;
   }
@@ -354,13 +378,48 @@
       picker.appendChild(visNote);
     }
 
+    // #90: track the currently-selected tile + candidate. Confirm is disabled
+    //   until the user picks one (no silent auto-pick).
+    // confirmBtn is declared below and only referenced from the click callback,
+    // which fires long after this function returns (deferred use is safe).
+    let confirmBtn  = null;
+    let selectedCand = null;
+    let selectedEl   = null;
+
     const list = document.createElement("div");
     list.className = "cand-list";
-    candidates.forEach(c => list.appendChild(makeCandCard(c, scannedCode, (picked) => { onPick && onPick(picked); })));
+    candidates.forEach(c => list.appendChild(makeCandCard(c, scannedCode, (picked, cardEl) => {
+      selectedCand = picked;
+      // Leroy F2: clear ARIA + class on the previously-selected tile so screen
+      //   readers don't report two "pressed" tiles after switching selection.
+      if (selectedEl) {
+        selectedEl.classList.remove("cand-card--selected");
+        selectedEl.setAttribute("aria-pressed", "false");
+      }
+      selectedEl = cardEl;
+      cardEl.classList.add("cand-card--selected");
+      cardEl.setAttribute("aria-pressed", "true");
+      if (confirmBtn) confirmBtn.disabled = false;
+    })));
     picker.appendChild(list);
 
     const footer = document.createElement("div");
     footer.className = "cand-footer";
+
+    // #90 (AC-011/AC-012): single in-picker Confirm button. Commits the chosen
+    //   printing in one click — no separate codeConfirmModal afterward.
+    confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.className = "primary cand-confirm";
+    confirmBtn.textContent = "Confirm";
+    confirmBtn.disabled = true;
+    confirmBtn.addEventListener("click", () => {
+      if (!selectedCand) return;
+      hideCandidatesPicker(); hideCaptureConfirmBar();
+      onPick && onPick(selectedCand);
+    });
+    footer.appendChild(confirmBtn);
+
     const rescanBtn = document.createElement("button");
     rescanBtn.type = "button"; rescanBtn.className = "secondary cand-rescan"; rescanBtn.textContent = "Rescan";
     rescanBtn.addEventListener("click", () => { hideCandidatesPicker(); hideCaptureConfirmBar(); onRescan && onRescan(); });
@@ -393,6 +452,11 @@
       setSel.appendChild(opt);
       setSel.value = cand.set_name;
       setSel.classList.remove("needs-input");
+    } else if (setSel) {
+      // UAT fix: a name-fallback candidate carries no set_name, so don't leave
+      //   the dropdown BLANK — restore the canonical "please select" placeholder.
+      //   ("Find Printings" will then populate the real set options.)
+      setPlaceholder(setSel);
     }
 
     const rarSel = $("raritySelect");
@@ -403,6 +467,9 @@
       rarSel.appendChild(opt);
       rarSel.value = cand.set_rarity;
       rarSel.classList.remove("needs-input");
+    } else if (rarSel) {
+      // UAT fix: same as Set — restore the placeholder instead of a blank box.
+      setPlaceholder(rarSel);
     }
 
     status($("ocrStatus"), `Code match: ${cand.set_code || scannedCode} → ${name}`);
@@ -451,8 +518,11 @@
     status($("ocrStatus"), "");
     const ocf = $("ocrConf"); if (ocf) ocf.textContent = "accuracy: —";
 
-    const setSel  = $("setSelect");    if (setSel)  setSel.innerHTML  = "";
-    const rarSel  = $("raritySelect"); if (rarSel)  rarSel.innerHTML  = "";
+    // Rebuild the canonical "please select" placeholder instead of wiping the
+    // <select> to a blank box. Clearing innerHTML left Set/Rarity empty between
+    // scans (UAT round 4) while Condition kept its placeholder option.
+    setPlaceholder($("setSelect"));
+    setPlaceholder($("raritySelect"));
     const cond    = $("conditionSelect"); if (cond) cond.value = "";
 
     resetFlowForNewPick();
@@ -599,29 +669,46 @@
       setMatchSource("name-fallback", scannedText || "");
     }
 
-    // Single confident match → populate directly
-    if (candidates.length === 1 && (best.exactMatch || (best.score || 0) >= 0.90)) {
+    // UAT fix (issue: "confirm the card twice"): the multi-option picker is
+    //   ONLY for disambiguating multiple printings. With a single candidate we
+    //   must route straight to the capture-confirm bar regardless of OCR
+    //   confidence — otherwise a low-confidence single match (e.g. an 84% name
+    //   fallback) showed the picker (pick tile + Confirm) AND THEN the
+    //   capture-confirm bar, forcing the user to confirm the same card twice.
+    //   Confidence only affects the status copy now, not the branch.
+    if (candidates.length === 1) {
       applyCodeCandidate(best, primaryCode);
       const label = best.set_code ? `${best.set_code} · ${best.set_rarity || "?"}` : (best.set_rarity || "");
-      setAutoStatus(`Found: ${best.name}. Choose condition + qty, then confirm.`);
+      const confident = best.exactMatch || (best.score || 0) >= 0.90;
+      setAutoStatus(confident
+        ? `Found: ${best.name}. Choose condition + qty, then confirm.`
+        : `Best match: ${best.name}. Choose condition + qty and confirm, or Rescan if wrong.`);
       showCaptureConfirmBar(best, label || null);
       return;
     }
 
-    // #55: Multiple candidates → auto-pick the top match and route it straight
-    // into the single Accept & Confirm bar (no two-step tile-picker). Rescan on
-    // the confirm bar is the escape hatch if the top match is wrong; Manual Name
-    // override remains available. The legacy picker (showCandidatesPicker) is
-    // kept in code for back-compat but is no longer shown in the normal flow.
-    hideCandidatesPicker();
-    applyCodeCandidate(best, primaryCode || best.set_code || "");
-    if (scanMode === "code") setMatchSource("exact-code", best.set_code || primaryCode);
-    else setMatchSource("name-fallback", scannedText || "");
-    const bestLabel = best.set_code
-      ? `${best.set_code} · ${best.set_rarity || ""}`.trim()
-      : (best.set_rarity || "");
-    setAutoStatus(`Found: ${best.name}. Choose condition + qty, then confirm (or Rescan).`);
-    showCaptureConfirmBar(best, bestLabel || null);
+    // #90 (EPIC-87, AC-010..013): revert #55's silent auto-pick. When a lookup
+    //   returns multiple printings, show the multi-option picker so the user
+    //   selects the correct Set/Rarity printing. Selecting a tile + the single
+    //   in-picker Confirm commits the choice (no codeConfirmModal double-step),
+    //   then routes into the existing capture-confirm bar where Condition + Qty
+    //   stay (unchanged). Single-match branch above is untouched.
+    setAutoStatus(`Multiple printings for ${best.name} — choose one below.`);
+    showCandidatesPicker(
+      candidates,
+      primaryCode || "",
+      (picked) => {
+        applyCodeCandidate(picked, primaryCode || picked.set_code || "");
+        if (scanMode === "code") setMatchSource("exact-code", picked.set_code || primaryCode);
+        else setMatchSource("name-fallback", scannedText || "");
+        const lbl = picked.set_code
+          ? `${picked.set_code} · ${picked.set_rarity || ""}`.trim()
+          : (picked.set_rarity || "");
+        setAutoStatus(`Selected: ${picked.name}. Choose condition + qty, then confirm.`);
+        showCaptureConfirmBar(picked, lbl || null);
+      },
+      doRescan
+    );
   }
 
   // ── Bind UI actions ────────────────────────────────────────────────────────────
@@ -762,4 +849,8 @@
 
   window.UI.scan = window.UI.scan || {};
   window.UI.scan.bind = bind;
+  // #90 (EPIC-87): expose the multi-option picker for direct use/testing.
+  window.UI.scan.showCandidatesPicker = showCandidatesPicker;
+  // UAT: expose the scan-result router for direct use/testing.
+  window.UI.scan.handleScanResult = handleScanResult;
 })();

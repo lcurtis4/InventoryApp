@@ -28,7 +28,8 @@
     </div>
   </header>
 
-  <p class="app-subtitle muted">Code-first scan: reads set code (bottom of card) + name simultaneously; image assist re-ranks candidates.</p>
+  <!-- #91 (EPIC-87, AC-014): copy updated post-EPIC-63 — automatic scan is name-only. -->
+  <p class="app-subtitle muted">Name-first scan: reads the card name automatically; image assist re-ranks candidates. Set code can be entered manually.</p>
 
   <div class="layout">
     <!-- LEFT: Camera panel -->
@@ -37,8 +38,13 @@
         <div class="controls">
           <button id="startBtn" class="primary">Start Camera</button>
           <button id="scanToggleBtn" class="secondary" style="display:none;" aria-pressed="false">Pause Scanning</button>
-          <span id="autoStatus" class="muted"></span>
         </div>
+
+        <!-- UAT fix: the user-prompt status used to live inside the .controls
+             button row, where it was clipped behind the right-hand form column.
+             It now sits on its own static, full-width line between the buttons
+             and the camera window so it is always fully visible. -->
+        <div id="autoStatus" class="muted auto-status"></div>
 
         <div class="camwrap">
           <video id="video" autoplay playsinline></video>
@@ -47,8 +53,21 @@
         <canvas id="workCanvas" style="display:none;"></canvas>
         <div id="camStatus" class="status"></div>
 
+        <!-- #89 (EPIC-87, AC-006): secondary reveal path for the OCR preview.
+             Primary path is Shift+D (#88, AC-005). Hidden by default (AC-004).
+             Placed below the camera preview so the toggle sits next to the
+             preview panel it controls. -->
+        <div class="ocr-preview-controls">
+          <button id="ocrPreviewToggleBtn" class="secondary" type="button"
+                  aria-pressed="false" aria-controls="debugSection"
+                  title="Toggle the name-band OCR preview (Shift+D)">Show OCR Preview</button>
+        </div>
+
         <!-- v8.2: Debug panels — name-band crop (existing) + dedicated code-crop -->
-        <div class="debug-section">
+        <!-- #89 (EPIC-87, AC-004): OCR preview hidden by default. Revealed via
+             Shift+D (#88) or the "Show OCR Preview" toggle. The `is-hidden`
+             class controls visibility; JS toggles it. -->
+        <div class="debug-section is-hidden" id="debugSection">
           <label class="muted debug-label">Name band OCR crop</label>
           <canvas id="debugCanvas" class="debug-canvas"></canvas>
         </div>
@@ -107,7 +126,8 @@
         <!-- v8: Manual Code Entry -->
         <div class="group">
           <h2>Set Code</h2>
-          <div class="muted code-help">Primary scan method — reads set code from bottom-left of card (format like <code>SETCD-ENxxx</code>). You can also type a code directly below.</div>
+          <!-- #91 (EPIC-87, AC-014): set code is manual-entry only, not a scan method. -->
+          <div class="muted code-help">Optional manual lookup — type a set code (format like <code>SETCD-ENxxx</code>) to find a printing directly. Automatic scanning reads the card name.</div>
           <div class="row code-row">
             <input id="manualCode" type="text"
               placeholder="e.g. SETCD-ENxxx"
@@ -279,6 +299,7 @@
   <script defer src="js/ui/lookup.js"></script>
   <script defer src="js/ui/scan.js"></script>
   <script defer src="js/ui/confirm.js"></script>
+  <script defer src="js/ui/ocrPreview.js"></script>
   <script defer src="js/ui/index.js"></script>
   <!-- #58: show hosted git branch in the header badge (reads .git/HEAD) -->
   <script defer src="js/ui/branchBadge.js"></script>

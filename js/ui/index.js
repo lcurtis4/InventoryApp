@@ -21,5 +21,8 @@
     // Bind scanner (camera + OCR flow)
     safe(() => window.UI?.scan?.bind?.(), "scan.bind");
 
+    // EPIC-87 (#88/#89): OCR preview visibility (Shift+D + toggle button)
+    safe(() => window.UI?.ocrPreview?.init?.(), "ocrPreview.init");
+
   });
 })();

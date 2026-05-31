@@ -339,10 +339,20 @@
   function resetForm() {
     function resetSelect(sel) {
       if (!sel) return;
-      // Keep only the first placeholder option
-      const ph = sel.options[0];
+      // #86 (EPIC-87, AC-002/AC-003): rebuild a fresh "please select" placeholder
+      //   instead of reusing sel.options[0]. During a scan, populateSetDropdown()
+      //   and the code-match path do `innerHTML = ""` and rebuild the option list,
+      //   so options[0] may be a real set/rarity name (not the placeholder) by the
+      //   time we reset. Reusing it left the Set/Rarity dropdowns BLANK on the next
+      //   card. Always emit the canonical placeholder shape here, matching the
+      //   makePlaceholder() factory in lookup.js.
       while (sel.firstChild) sel.removeChild(sel.firstChild);
-      if (ph) { sel.appendChild(ph); ph.selected = true; }
+      const ph = document.createElement("option");
+      ph.value = "";
+      ph.textContent = "please select";
+      ph.disabled = true;
+      ph.selected = true;
+      sel.appendChild(ph);
       sel.disabled = false;
       if (sel.dataset) sel.dataset.populated = "0";
       sel.dispatchEvent(new Event("change", { bubbles: true }));
