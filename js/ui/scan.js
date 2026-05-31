@@ -75,8 +75,15 @@
     if (el) el.textContent = msg;
   }
 
-  // ── Match-source status bar (v8.2) ────────────────────────────────────────────
+  // ── Match-source status bar ─────────────────────────────────────────────────
   // mode: "exact-code" | "code-unresolved" | "name-fallback" | "manual-code" | ""
+  //
+  // UAT round 5: the bar previously surfaced on every match — including the
+  // normal success/name-fallback cases — which was noisy and used outdated
+  // wording. It now ONLY renders for genuine errors (a scanned code that could
+  // not be resolved). All other modes are tracked silently so downstream state
+  // is unaffected, but no banner is shown.
+  const ERROR_MODES = { "code-unresolved": true };
   function setMatchSource(mode, detail) {
     const bar   = $("matchSourceBar");
     const label = $("matchSourceLabel");
@@ -84,24 +91,15 @@
     if (!bar || !label) return;
 
     const labels = {
-      "exact-code":       "✔ Exact set-code match",
-      "code-unresolved":  "⚠ Code scanned but not resolved — using name fallback",
-      "name-fallback":    "⚠ Name fallback (no code read)",
-      "manual-code":      "✔ Manual code lookup",
-      "":                 "",
-    };
-    const icons = {
-      "exact-code":      "●",
-      "code-unresolved": "●",
-      "name-fallback":   "●",
-      "manual-code":     "●",
-      "":                "●",
+      "code-unresolved": "⚠ Couldn’t read a set code — double-check Set & Rarity",
     };
 
-    bar.style.display = mode ? "" : "none";
-    bar.setAttribute("data-mode", mode || "");
-    if (label) label.textContent = (labels[mode] || mode) + (detail ? ` — ${detail}` : "");
-    if (icon)  icon.textContent  = icons[mode] || "●";
+    const show = !!ERROR_MODES[mode];
+    bar.style.display = show ? "" : "none";
+    bar.setAttribute("data-mode", show ? mode : "");
+    if (!show) { label.textContent = ""; return; }
+    label.textContent = (labels[mode] || mode) + (detail ? ` — ${detail}` : "");
+    if (icon) icon.textContent = "●";
   }
   window.UI.setMatchSource = setMatchSource;
 
