@@ -60,27 +60,19 @@
       (e.key === "D" || e.key === "d" || e.code === "KeyD");
     if (!isShiftD) return;
 
-    // AC-009 (revised): Shift+D is a deliberate app shortcut, so it ALWAYS
-    //   toggles — even when focus is in the Manual Name box (which it is right
-    //   after the first Shift+D focuses it). Previously we bailed out when a
-    //   text input was focused, which made the *second* Shift+D type a literal
-    //   "D" into the field instead of closing the preview. We preventDefault on
-    //   every Shift+D so the chord never reaches an input as text. (A bare "d"
-    //   has no Shift and never matches here, so normal typing is unaffected.)
+    // UAT round 2 — two fixes:
+    //  (a) Registered in the CAPTURE phase (see init) so we intercept Shift+D
+    //      BEFORE #manualName's own keydown handler runs. We stopImmediate-
+    //      Propagation + preventDefault so the chord NEVER reaches the input
+    //      as text and never triggers the input's pause-on-keydown. This is
+    //      why the 2nd Shift+D previously "typed D" / stopped toggling.
+    //  (b) Shift+D NO LONGER focuses the Manual Name box. Focusing it fired
+    //      #manualName's focus -> Scanner.pause(), which paused scanning as a
+    //      side effect. Shift+D is now a pure show/hide of the OCR preview and
+    //      leaves scanning + focus untouched.
     e.preventDefault();
-
-    // AC-007: Shift+D toggles. AC-005: when revealing, focus the name box.
-    if (isVisible()) {
-      hide();
-      // Return focus out of the name box so a follow-up keystroke isn't typed
-      // into it; only blur if the name box currently holds focus.
-      const nameEl = $(NAME_ID);
-      if (nameEl && document.activeElement === nameEl) nameEl.blur();
-    } else {
-      show();
-      const nameEl = $(NAME_ID);
-      if (nameEl) { nameEl.focus(); nameEl.select?.(); }
-    }
+    e.stopImmediatePropagation();
+    toggle();
   }
 
   function init() {
@@ -88,13 +80,11 @@
     // (HTML ships with .is-hidden; this is a defensive guarantee.)
     hide();
 
-    $(TOGGLE_ID)?.addEventListener("click", () => {
-      toggle();
-      // AC-005 parity: revealing via the button also focuses the name box.
-      if (isVisible()) $(NAME_ID)?.focus();
-    });
+    // Pure show/hide toggle. Does NOT move focus (so it can't pause scanning).
+    $(TOGGLE_ID)?.addEventListener("click", () => { toggle(); });
 
-    document.addEventListener("keydown", onKeydown);
+    // Capture phase: run before input-level keydown handlers (#manualName).
+    document.addEventListener("keydown", onKeydown, true);
   }
 
   UI.ocrPreview = { init, show, hide, toggle, isVisible };
