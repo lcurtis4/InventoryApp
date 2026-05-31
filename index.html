@@ -38,13 +38,13 @@
         <div class="controls">
           <button id="startBtn" class="primary">Start Camera</button>
           <button id="scanToggleBtn" class="secondary" style="display:none;" aria-pressed="false">Pause Scanning</button>
-          <!-- #89 (EPIC-87, AC-006): secondary reveal path for the OCR preview.
-               Primary path is Shift+D (#88, AC-005). Hidden by default (AC-004). -->
-          <button id="ocrPreviewToggleBtn" class="secondary" type="button"
-                  aria-pressed="false" aria-controls="debugSection"
-                  title="Toggle the name-band OCR preview (Shift+D)">Show OCR Preview</button>
-          <span id="autoStatus" class="muted"></span>
         </div>
+
+        <!-- UAT fix: the user-prompt status used to live inside the .controls
+             button row, where it was clipped behind the right-hand form column.
+             It now sits on its own static, full-width line between the buttons
+             and the camera window so it is always fully visible. -->
+        <div id="autoStatus" class="muted auto-status"></div>
 
         <div class="camwrap">
           <video id="video" autoplay playsinline></video>
@@ -52,6 +52,16 @@
         </div>
         <canvas id="workCanvas" style="display:none;"></canvas>
         <div id="camStatus" class="status"></div>
+
+        <!-- #89 (EPIC-87, AC-006): secondary reveal path for the OCR preview.
+             Primary path is Shift+D (#88, AC-005). Hidden by default (AC-004).
+             Placed below the camera preview so the toggle sits next to the
+             preview panel it controls. -->
+        <div class="ocr-preview-controls">
+          <button id="ocrPreviewToggleBtn" class="secondary" type="button"
+                  aria-pressed="false" aria-controls="debugSection"
+                  title="Toggle the name-band OCR preview (Shift+D)">Show OCR Preview</button>
+        </div>
 
         <!-- v8.2: Debug panels — name-band crop (existing) + dedicated code-crop -->
         <!-- #89 (EPIC-87, AC-004): OCR preview hidden by default. Revealed via

@@ -52,15 +52,6 @@
     else show();
   }
 
-  // AC-009: don't steal the keystroke while the user is typing.
-  function isTypingTarget(el) {
-    if (!el) return false;
-    const tag = (el.tagName || "").toLowerCase();
-    if (tag === "input" || tag === "textarea" || tag === "select") return true;
-    if (el.isContentEditable) return true;
-    return false;
-  }
-
   function onKeydown(e) {
     // Match Shift+D only (case-insensitive on the produced char). Ignore when
     // other modifiers are held so we don't clash with browser/OS shortcuts.
@@ -69,14 +60,22 @@
       (e.key === "D" || e.key === "d" || e.code === "KeyD");
     if (!isShiftD) return;
 
-    // AC-009: if focus is in a text field, let the keystroke through untouched.
-    if (isTypingTarget(e.target)) return;
-
+    // AC-009 (revised): Shift+D is a deliberate app shortcut, so it ALWAYS
+    //   toggles — even when focus is in the Manual Name box (which it is right
+    //   after the first Shift+D focuses it). Previously we bailed out when a
+    //   text input was focused, which made the *second* Shift+D type a literal
+    //   "D" into the field instead of closing the preview. We preventDefault on
+    //   every Shift+D so the chord never reaches an input as text. (A bare "d"
+    //   has no Shift and never matches here, so normal typing is unaffected.)
     e.preventDefault();
 
     // AC-007: Shift+D toggles. AC-005: when revealing, focus the name box.
     if (isVisible()) {
       hide();
+      // Return focus out of the name box so a follow-up keystroke isn't typed
+      // into it; only blur if the name box currently holds focus.
+      const nameEl = $(NAME_ID);
+      if (nameEl && document.activeElement === nameEl) nameEl.blur();
     } else {
       show();
       const nameEl = $(NAME_ID);
