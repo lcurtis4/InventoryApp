@@ -520,8 +520,11 @@
     status($("ocrStatus"), "");
     const ocf = $("ocrConf"); if (ocf) ocf.textContent = "accuracy: —";
 
-    const setSel  = $("setSelect");    if (setSel)  setSel.innerHTML  = "";
-    const rarSel  = $("raritySelect"); if (rarSel)  rarSel.innerHTML  = "";
+    // Rebuild the canonical "please select" placeholder instead of wiping the
+    // <select> to a blank box. Clearing innerHTML left Set/Rarity empty between
+    // scans (UAT round 4) while Condition kept its placeholder option.
+    setPlaceholder($("setSelect"));
+    setPlaceholder($("raritySelect"));
     const cond    = $("conditionSelect"); if (cond) cond.value = "";
 
     resetFlowForNewPick();
