@@ -1,4 +1,4 @@
-// js/ui/scan.js  — v10.1
+// js/ui/scan.js  — v14.0 (EPIC-93: card-select modal + cue integration)
 // v10.1 changes:
 //   • Listens for `inventory:form:reset` (dispatched by confirm.js after a
 //     successful Post to Sheet). On reset we now:
@@ -428,6 +428,118 @@
     picker.style.display = "";
   }
 
+  // ── EPIC-93 Story #96: Card Select Modal (AC-002 / AC-003) ───────────────────
+  // Routes multi-candidate selection through #cardSelectModal (a centered popup)
+  // instead of the inline #candidatesPicker in the form. Candidate tiles and the
+  // single Confirm button are rendered inside the modal body; Rescan cancels.
+  function openCardSelectModal(candidates, scannedCode, onPick, onRescan) {
+    const modal = $("cardSelectModal");
+    const body  = $("cardSelectModalBody");
+    if (!modal || !body) {
+      // Fallback: legacy inline picker if modal element not present
+      showCandidatesPicker(candidates, scannedCode, onPick, onRescan);
+      return;
+    }
+
+    // Update title to include code if available
+    const titleEl = $("cardSelectModalTitle");
+    if (titleEl) titleEl.textContent = scannedCode ? `Code "${scannedCode}" — choose printing` : "Choose matching card";
+
+    body.innerHTML = "";
+
+    // Re-use the existing makeCandCard builder for visual parity
+    let confirmBtn  = null;
+    let selectedCand = null;
+    let selectedEl   = null;
+
+    const hasVis = candidates.some(c => typeof c.imgScore === "number");
+    if (hasVis) {
+      const visNote = document.createElement("div");
+      visNote.className = "cand-vis-note";
+      visNote.textContent = "Visual similarity scored against card art (browser-only, 32×32 crop).";
+      body.appendChild(visNote);
+    }
+
+    const list = document.createElement("div");
+    list.className = "cand-list";
+    candidates.forEach(c => list.appendChild(makeCandCard(c, scannedCode, (picked, cardEl) => {
+      selectedCand = picked;
+      if (selectedEl) {
+        selectedEl.classList.remove("cand-card--selected");
+        selectedEl.setAttribute("aria-pressed", "false");
+      }
+      selectedEl = cardEl;
+      cardEl.classList.add("cand-card--selected");
+      cardEl.setAttribute("aria-pressed", "true");
+      if (confirmBtn) confirmBtn.disabled = false;
+    })));
+    body.appendChild(list);
+
+    const footer = document.createElement("div");
+    footer.className = "cand-footer";
+
+    confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.className = "primary cand-confirm";
+    confirmBtn.textContent = "Confirm";
+    confirmBtn.disabled = true;
+    confirmBtn.addEventListener("click", () => {
+      if (!selectedCand) return;
+      _closeCardSelectModal();
+      onPick && onPick(selectedCand);
+    });
+    footer.appendChild(confirmBtn);
+
+    const rescanBtn = document.createElement("button");
+    rescanBtn.type = "button";
+    rescanBtn.className = "secondary cand-rescan";
+    rescanBtn.textContent = "Rescan";
+    rescanBtn.addEventListener("click", () => {
+      _closeCardSelectModal();
+      hideCaptureConfirmBar();
+      onRescan && onRescan();
+    });
+    footer.appendChild(rescanBtn);
+    body.appendChild(footer);
+
+    // Wire close-X button (AC-007)
+    const closeX = $("cardSelectCloseX");
+    if (closeX) {
+      closeX.onclick = () => { _closeCardSelectModal(); onRescan && onRescan(); };
+    }
+
+    // Backdrop click closes (AC-007)
+    modal.querySelector(".modal__backdrop")?.addEventListener("click", (e) => {
+      if (e.target === e.currentTarget) { _closeCardSelectModal(); onRescan && onRescan(); }
+    }, { once: true });
+
+    // Esc to close (AC-007)
+    const escHandler = (e) => {
+      if (e.key === "Escape" && modal.classList.contains("is-open")) {
+        _closeCardSelectModal();
+        onRescan && onRescan();
+        document.removeEventListener("keydown", escHandler);
+      }
+    };
+    document.addEventListener("keydown", escHandler);
+
+    // Open the modal
+    modal.classList.add("is-open");
+    modal.setAttribute("aria-hidden", "false");
+    const dialog = modal.querySelector(".modal__dialog");
+    if (dialog) { dialog.setAttribute("tabindex", "-1"); dialog.focus(); }
+    document.documentElement.style.overflow = "hidden";
+  }
+
+  function _closeCardSelectModal() {
+    const modal = $("cardSelectModal");
+    if (!modal) return;
+    if (window.UI?.moveFocusOutOf) window.UI.moveFocusOutOf(modal);
+    modal.classList.remove("is-open");
+    modal.setAttribute("aria-hidden", "true");
+    document.documentElement.style.overflow = "";
+  }
+
   // ── Apply a code-resolved candidate directly to the form ──────────────────────
   function applyCodeCandidate(cand, scannedCode) {
     const name = cand.name || "";
@@ -488,6 +600,16 @@
     });
 
     enableQtyIfReady();
+    // EPIC-93 (AC-004/AC-005): fire cue based on readiness after code candidate applied
+    try {
+      const condVal  = $("conditionSelect")?.value;
+      const qtyFinal = parseInt($("qty")?.value || "0", 10);
+      if (condVal && qtyFinal >= 1) {
+        window.UI?.cue?.fireReady?.();
+      } else if (!condVal) {
+        window.UI?.cue?.fireNeedsInput?.($("conditionSelect"));
+      }
+    } catch (_) {}
   }
 
   // ── Apply a name-path candidate ────────────────────────────────────────────────
@@ -509,8 +631,11 @@
     const man = $("manualName"); if (man) man.value = "";
     const mc  = $("manualCode"); if (mc)  mc.value  = "";
 
+    // EPIC-93: clear any active cue highlights on form reset
+    try { window.UI?.cue?.clearCues?.(); } catch (_) {}
     hideCaptureConfirmBar();
     hideCandidatesPicker();
+    _closeCardSelectModal();
     clearNeedsInput();
     setMatchSource("");
 
@@ -599,7 +724,8 @@
       } else {
         status($("lookupStatus"), `${candidates.length} printings found for ${code}.`);
         setAutoStatus("Multiple printings — choose one below.");
-        showCandidatesPicker(candidates, code, (picked) => {
+        // EPIC-93 Story #96 (AC-002/AC-003): use centered card-select modal popup
+        openCardSelectModal(candidates, code, (picked) => {
           applyCodeCandidate(picked, code);
           setMatchSource("manual-code", picked.set_code || code);
           showCaptureConfirmBar(picked, picked.set_code || code);
@@ -694,7 +820,8 @@
     //   then routes into the existing capture-confirm bar where Condition + Qty
     //   stay (unchanged). Single-match branch above is untouched.
     setAutoStatus(`Multiple printings for ${best.name} — choose one below.`);
-    showCandidatesPicker(
+    // EPIC-93 Story #96 (AC-002/AC-003): use centered card-select modal popup
+    openCardSelectModal(
       candidates,
       primaryCode || "",
       (picked) => {
@@ -849,8 +976,10 @@
 
   window.UI.scan = window.UI.scan || {};
   window.UI.scan.bind = bind;
-  // #90 (EPIC-87): expose the multi-option picker for direct use/testing.
+  // Legacy inline picker (kept for backward compat; use openCardSelectModal for new flows)
   window.UI.scan.showCandidatesPicker = showCandidatesPicker;
+  // EPIC-93 Story #96: centered modal picker
+  window.UI.scan.openCardSelectModal = openCardSelectModal;
   // UAT: expose the scan-result router for direct use/testing.
   window.UI.scan.handleScanResult = handleScanResult;
 })();

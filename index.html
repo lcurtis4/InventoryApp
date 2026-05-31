@@ -216,16 +216,32 @@
     <span id="dbInfo" class="db-info muted" aria-live="polite">Card DB: loading…</span>
   </footer>
 
-  <!-- Success Modal -->
-  <div id="successModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+  <!-- Success Modal (EPIC-93, Story #95: art-forward .cc-card layout, AC-001 / AC-008) -->
+  <div id="successModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="successModalTitle">
+    <div class="modal__backdrop" aria-hidden="true"></div>
     <div class="modal__dialog" role="document" tabindex="-1">
       <div class="modal__header">
-        <h3 class="modal__title">Added to Sheet</h3>
-        <!-- v22: × close button removed; OK button + Esc + backdrop-click are the close paths -->
+        <h3 class="modal__title" id="successModalTitle">Added to Sheet</h3>
       </div>
-      <div class="modal__body" id="successModalBody"></div>
+      <div class="modal__body" id="successModalBody">
+        <!-- JS (confirm.js openSuccessModal) writes the .cc-card structure here -->
+      </div>
       <div class="modal__footer">
         <button class="modal__ok primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card Select Modal (EPIC-93, Story #96: centered popup for multi-printing disambiguation, AC-002 / AC-003) -->
+  <div id="cardSelectModal" class="modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="cardSelectModalTitle">
+    <div class="modal__backdrop" aria-hidden="true"></div>
+    <div class="modal__dialog card-select-dialog" role="document" tabindex="-1">
+      <div class="modal__header">
+        <h3 class="modal__title" id="cardSelectModalTitle">Choose printing</h3>
+        <button id="cardSelectCloseX" class="modal__close" aria-label="Close">×</button>
+      </div>
+      <div class="modal__body" id="cardSelectModalBody">
+        <!-- JS (scan.js showCardSelectModal) writes the .cand-list + Confirm/Rescan here -->
       </div>
     </div>
   </div>
@@ -296,6 +312,7 @@
   <script defer src="js/ui/state.js"></script>
   <script defer src="js/ui/names.js"></script>
   <script defer src="js/ui/modal.js"></script>
+  <script defer src="js/ui/cue.js"></script>
   <script defer src="js/ui/lookup.js"></script>
   <script defer src="js/ui/scan.js"></script>
   <script defer src="js/ui/confirm.js"></script>

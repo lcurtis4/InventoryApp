@@ -1,4 +1,4 @@
-// js/ui/confirm.js — v13.4 (Sprint 1: success-modal polish)
+// js/ui/confirm.js — v14.0 (EPIC-93: unified confirm UX)
 //
 // v13.4 changes (Sprint 1 — closes #3, #4, #20, #21, #22):
 //   • Issue #3 (v18 PRICE-OFF): no price line in the success modal markup.
@@ -167,38 +167,57 @@
     confirmStatus.className = "status " + (kind === "error" ? "error" : kind === "ok" ? "ok" : "");
   }
 
-  // ---- Success modal — v8.2 fix: use modal.js open/close ----
-  // modal.js sets window.UI.modal in its IIFE (before this file runs).
-  // modal.js.open() adds ".is-open" class which makes .modal.is-open { display:block }
-  // work correctly in style.css.
-  function openSuccessModal(messageHtml) {
+  // ---- Success modal — EPIC-93 Story #95: art-forward .cc-card layout (AC-001 / AC-008) ----
+  // Builds the same .cc-card markup used by #codeConfirmModal so all three
+  // confirmation surfaces share one visual language. Delegates open/close to
+  // modal.js for .is-open toggling, focus management, and scan-resume (AC-008).
+  function _buildSuccessCardHtml(row, isMerged, mergedQty) {
+    const cardId = State?.selectedPrinting?.id || State?.selectedCard?.id || null;
+    const imgUrl = State?.selectedPrinting?.imageUrl
+                || (cardId ? `https://images.ygoprodeck.com/images/cards/${cardId}.jpg` : null);
+    const artTag = imgUrl
+      ? `<img class="cc-art" src="${imgUrl}" alt="${row.name}" onerror="this.style.display='none'" />`
+      : `<div class="cc-art cc-art--missing" aria-hidden="true"></div>`;
+    const mergeTag = isMerged
+      ? `<span class="merge-tag">(merged &times; ${mergedQty})</span>`
+      : "";
+    return `
+      <div class="cc-card">
+        ${artTag}
+        <div class="cc-info">
+          <div class="cc-name">${row.name} ${mergeTag}</div>
+          <div class="cc-row"><span class="cc-label">Set</span><span class="cc-value">${row.set || "\u2014"}</span></div>
+          <div class="cc-row"><span class="cc-label">Code</span><span class="cc-value cc-code">${row.code || "\u2014"}</span></div>
+          <div class="cc-row"><span class="cc-label">Rarity</span><span class="cc-value">${row.rarity || "\u2014"}</span></div>
+          <div class="cc-row"><span class="cc-label">Qty added</span><span class="cc-value">${row.qty}</span></div>
+          <div class="cc-row"><span class="cc-label">Condition</span><span class="cc-value">${row.condition || "\u2014"}</span></div>
+        </div>
+      </div>`;
+  }
+
+  function openSuccessModal(cardHtml) {
+    try { window.UI?.cue?.clearCues?.(); } catch (_) {}
     if (window.UI?.modal?.open) {
-      // Preferred path: delegate to modal.js which handles .is-open, focus, scroll lock, etc.
-      window.UI.modal.open(messageHtml || "Added.");
+      window.UI.modal.open(cardHtml || "Added.");
     } else {
-      // Fallback: directly add .is-open if modal.js failed to load for any reason
       const m = document.getElementById("successModal");
       const body = document.getElementById("successModalBody");
       if (!m) return;
-      if (body) body.innerHTML = messageHtml || "Added.";
+      if (body) body.innerHTML = cardHtml || "Added.";
       m.classList.add("is-open");
       m.setAttribute("aria-hidden", "false");
-      // Wire close button manually in case modal.js init() didn't run.
-      // v22: × button removed from header; OK is the only close affordance now.
-      const closeOnce = () => closeSuccessModal();
-      m.querySelector(".modal__ok")?.addEventListener("click", closeOnce, { once: true });
+      m.querySelector(".modal__ok")?.addEventListener("click", closeSuccessModal, { once: true });
     }
   }
-  // modal.js.close() removes .is-open and resumes scanning.
+
+  // modal.js.close() removes .is-open and resumes scanning (AC-008).
   function closeSuccessModal() {
+    try { window.UI?.cue?.clearCues?.(); } catch (_) {}
     if (window.UI?.modal?.close) {
       window.UI.modal.close();
     } else {
       const m = document.getElementById("successModal");
       if (!m) return;
-      // v16 (#27): move focus out of the modal BEFORE setting aria-hidden="true"
-      // (shared helper handles the body-tabindex dance). Prevents Chrome's
-      // "Blocked aria-hidden ... descendant retained focus" WCAG violation.
       if (window.UI?.moveFocusOutOf) window.UI.moveFocusOutOf(m);
       else if (m.contains(document.activeElement)) { try { document.activeElement.blur(); } catch (_) {} }
       m.classList.remove("is-open");
@@ -458,13 +477,9 @@
       //              line as `(merged × N)` when applicable.
       // v13.4 (#3 — v18 PRICE-OFF):
       //   Intentionally NO price line rendered in the success modal.
-      const mergeTag = isMerged
-        ? ` <span class="merge-tag">(merged × ${result.newQty})</span>`
-        : "";
-      openSuccessModal(
-        `<div><strong>${row.name}</strong> (${row.set}${row.code ? " • " + row.code : ""})${mergeTag}</div>
-         <div>Rarity: ${row.rarity} &bull; Condition: ${row.condition} &bull; Qty added: ${row.qty}</div>`
-      );
+      // EPIC-93 Story #95 (AC-001): success modal now renders the art-forward
+      // .cc-card layout, matching the codeConfirmModal visual language.
+      openSuccessModal(_buildSuccessCardHtml(row, isMerged, result.newQty));
 
       resetForm();
       // v13.4 (Sprint 1, #4): drop row-N from status text. Keep merged-vs-new
@@ -518,10 +533,10 @@
 
   if (confirmBtn) confirmBtn.disabled = true;
 
-  // v16 (#42): populate Condition from the constant list on initial load so the
-  // dropdown is authoritative from the start (and identical to its post-reset
-  // state), making the static index.html <option>s a redundant fallback only.
+  // v16 (#42): populate Condition from the constant list on initial load.
   populateConditionSelect();
 
-  // CONSOLE-OFF v13.4 console.log("[confirm] confirm.js initialized :: v16 (#42 condition repopulate)");
+  // EPIC-93: expose openCodeConfirmModal so scan.js can call
+  // window.UI.openCodeConfirmModal() (captureConfirmBtn path).
+  UI.openCodeConfirmModal = openCodeConfirmModal;
 })();
