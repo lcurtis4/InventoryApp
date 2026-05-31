@@ -258,11 +258,41 @@
           <img id="codeConfirmArt" class="cc-art" alt="" />
           <div class="cc-info">
             <div id="codeConfirmName" class="cc-name">—</div>
-            <div class="cc-row"><span class="cc-label">Set</span><span id="codeConfirmSet" class="cc-value">—</span></div>
+
+            <!-- Set row: static span (code-match path) OR picker select (name path) -->
+            <div class="cc-row" id="codeConfirmSetRow--static">
+              <span class="cc-label">Set</span>
+              <span id="codeConfirmSet" class="cc-value">—</span>
+            </div>
+            <div class="cc-row cc-picker-row" id="codeConfirmSetRow--pick" style="display:none">
+              <label class="cc-label" for="codeConfirmSetPicker">Set</label>
+              <select id="codeConfirmSetPicker" class="cc-picker-select"><option value="">please select</option></select>
+            </div>
+
             <div class="cc-row"><span class="cc-label">Code</span><span id="codeConfirmCode" class="cc-value cc-code">—</span></div>
-            <div class="cc-row"><span class="cc-label">Rarity</span><span id="codeConfirmRarity" class="cc-value">—</span></div>
+
+            <!-- Rarity row: static span OR picker select -->
+            <div class="cc-row" id="codeConfirmRarityRow--static">
+              <span class="cc-label">Rarity</span>
+              <span id="codeConfirmRarity" class="cc-value">—</span>
+            </div>
+            <div class="cc-row cc-picker-row" id="codeConfirmRarityRow--pick" style="display:none">
+              <label class="cc-label" for="codeConfirmRarityPicker">Rarity</label>
+              <select id="codeConfirmRarityPicker" class="cc-picker-select" disabled><option value="">please select</option></select>
+            </div>
+
             <div class="cc-row"><span class="cc-label">Qty</span><span id="codeConfirmQty" class="cc-value">—</span></div>
-            <div class="cc-row"><span class="cc-label">Condition</span><span id="codeConfirmCondition" class="cc-value">—</span></div>
+
+            <!-- Condition row: static span (already chosen) OR picker select -->
+            <div class="cc-row" id="codeConfirmConditionRow--static" style="display:none">
+              <span class="cc-label">Condition</span>
+              <span id="codeConfirmCondition" class="cc-value">—</span>
+            </div>
+            <div class="cc-row cc-picker-row" id="codeConfirmConditionRow--pick">
+              <label class="cc-label" for="codeConfirmConditionPicker">Condition</label>
+              <select id="codeConfirmConditionPicker" class="cc-picker-select"><option value="">please select</option></select>
+            </div>
+
           </div>
         </div>
         <!-- v13: legacy text node kept hidden for backward-compat with any code that still writes to it -->

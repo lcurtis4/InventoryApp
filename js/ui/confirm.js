@@ -1,4 +1,4 @@
-// js/ui/confirm.js — v14.2
+// js/ui/confirm.js — v14.4
 // Fix 1: Success modal shows "Inventory total" row when card already existed (merged).
 // Fix 2: postCurrentSelection exposed on window.UI so captureConfirmBtn can post
 //        directly without re-opening codeConfirmModal (no double-confirm).
@@ -20,6 +20,13 @@
 //     of opening the modal (which allowed posting with placeholder values).
 //   • highlightMissingFields() extracted as a shared helper called by both validateRow
 //     and the new captureConfirmBtn gate path — one highlight system, consistent behaviour.
+//
+// v14.4 (EPIC-93 continued):
+//   • codeConfirmConfirmBtn handler detects picker-mode and writes chosen Set/Rarity/Condition
+//     back to State + main form selects before calling postCurrentSelection(). This removes
+//     the last inline-confirm path: all three fields are now chosen inside the popup.
+//   • openCodeConfirmModalWithPicker() exposed on window.UI so lookup.js + scan.js can
+//     call it directly after printings are fetched.
 //
 // v14.0 (EPIC-93): unified confirm UX — art-forward modal, card-select popup, cue system.
 //
@@ -107,7 +114,7 @@
   const codeConfirmCloseX      = $("#codeConfirmCloseX");
   const codeConfirmCancelBtn   = $("#codeConfirmCancelBtn");
   const codeConfirmConfirmBtn  = $("#codeConfirmConfirmBtn");
-  // v13: art-forward card preview targets
+  // v13: art-forward card preview targets (static display spans)
   const codeConfirmArt         = $("#codeConfirmArt");
   const codeConfirmNameEl      = $("#codeConfirmName");
   const codeConfirmSetEl       = $("#codeConfirmSet");
@@ -115,6 +122,17 @@
   const codeConfirmRarityEl    = $("#codeConfirmRarity");
   const codeConfirmQtyEl       = $("#codeConfirmQty");
   const codeConfirmConditionEl = $("#codeConfirmCondition");
+  // v14.3: inline picker selects (name-path — user still needs to choose set/rarity/condition)
+  const codeConfirmSetPicker       = $("#codeConfirmSetPicker");
+  const codeConfirmRarityPicker    = $("#codeConfirmRarityPicker");
+  const codeConfirmConditionPicker = $("#codeConfirmConditionPicker");
+  // Row containers for show/hide toggling
+  const codeConfirmSetStaticRow    = $("#codeConfirmSetRow--static");
+  const codeConfirmSetPickRow      = $("#codeConfirmSetRow--pick");
+  const codeConfirmRarityStaticRow = $("#codeConfirmRarityRow--static");
+  const codeConfirmRarityPickRow   = $("#codeConfirmRarityRow--pick");
+  const codeConfirmCondStaticRow   = $("#codeConfirmConditionRow--static");
+  const codeConfirmCondPickRow     = $("#codeConfirmConditionRow--pick");
 
   // Recent grid
   const gridBody = document.querySelector("#grid tbody");
@@ -258,23 +276,8 @@
   // rarity/qty/condition rows on the right. Pulls data from State (selected
   // printing/card) and the live form fields so a single call site keeps
   // working without re-routing data through the caller.
-  function openCodeConfirmModal(codePreview) {
-    if (!codeModal) return;
-
-    const printing = State?.selectedPrinting || {};
-    const card     = State?.selectedCard     || {};
-    const name     = (manualNameEl?.value || "").trim() || (ocrNameEl?.value || "").trim() || card.name || "—";
-    const setName  = State?.selectedSetName  || getSelectedValue(setSel)    || getSelectedText(setSel)    || "—";
-    const rarity   = State?.selectedRarity   || getSelectedValue(raritySel) || getSelectedText(raritySel) || "—";
-    const code     = printing.set_code || codePreview || extractCodeFromOption(getSelectedText(setSel)) || "—";
-    const qty      = (qtyEl?.value || "1").trim() || "1";
-    const condition = getSelectedValue(conditionSel) || getSelectedText(conditionSel) || "—";
-
-    // Image URL: prefer explicit imageUrl, then derive from id, else hide image.
-    const cardId   = printing.id || card.id || null;
-    const imgUrl   = printing.imageUrl
-                  || (cardId ? `https://images.ygoprodeck.com/images/cards/${cardId}.jpg` : null);
-
+  // Helper: populate the modal art + name + code + qty (shared by both open paths)
+  function _populateModalArtAndMeta(name, code, qty, cardId, imgUrl) {
     if (codeConfirmArt) {
       if (imgUrl) {
         codeConfirmArt.src     = imgUrl;
@@ -286,18 +289,154 @@
         codeConfirmArt.style.display = "none";
       }
     }
-    if (codeConfirmNameEl)      codeConfirmNameEl.textContent      = name;
+    if (codeConfirmNameEl) codeConfirmNameEl.textContent = name;
+    if (codeConfirmCodeEl) codeConfirmCodeEl.textContent = code || "—";
+    if (codeConfirmQtyEl)  codeConfirmQtyEl.textContent  = qty  || "1";
+  }
+
+  // Helper: switch between static-span mode and picker-select mode for a row pair
+  function _showStaticRow(staticEl, pickEl, show) {
+    if (staticEl) staticEl.style.display = show ? "" : "none";
+    if (pickEl)   pickEl.style.display   = show ? "none" : "";
+  }
+
+  // ---- Code-match path: all fields already known, show static display rows ----
+  function openCodeConfirmModal(codePreview) {
+    if (!codeModal) return;
+
+    const printing = State?.selectedPrinting || {};
+    const card     = State?.selectedCard     || {};
+    const name     = (manualNameEl?.value || "").trim() || (ocrNameEl?.value || "").trim() || card.name || "—";
+    const setName  = State?.selectedSetName  || getSelectedValue(setSel)    || getSelectedText(setSel)    || "—";
+    const rarity   = State?.selectedRarity   || getSelectedValue(raritySel) || getSelectedText(raritySel) || "—";
+    const code     = printing.set_code || codePreview || extractCodeFromOption(getSelectedText(setSel)) || "—";
+    const qty      = (qtyEl?.value || "1").trim() || "1";
+    const condition = getSelectedValue(conditionSel) || getSelectedText(conditionSel) || "—";
+    const cardId   = printing.id || card.id || null;
+    const imgUrl   = printing.imageUrl || (cardId ? `https://images.ygoprodeck.com/images/cards/${cardId}.jpg` : null);
+
+    _populateModalArtAndMeta(name, code, qty, cardId, imgUrl);
+
+    // Static mode: show the span rows, hide the picker rows
+    _showStaticRow(codeConfirmSetStaticRow,    codeConfirmSetPickRow,    true);
+    _showStaticRow(codeConfirmRarityStaticRow, codeConfirmRarityPickRow, true);
+    // Condition: if already chosen show static, else show picker
+    const condKnown = !!(condition && condition !== "—");
+    _showStaticRow(codeConfirmCondStaticRow, codeConfirmCondPickRow, condKnown);
+    if (!condKnown) {
+      // Populate condition picker so the user can pick inside the modal
+      _populateConditionPicker(codeConfirmConditionPicker, "");
+    }
+
     if (codeConfirmSetEl)       codeConfirmSetEl.textContent       = setName;
-    if (codeConfirmCodeEl)      codeConfirmCodeEl.textContent      = code;
     if (codeConfirmRarityEl)    codeConfirmRarityEl.textContent    = rarity;
-    if (codeConfirmQtyEl)       codeConfirmQtyEl.textContent       = qty;
     if (codeConfirmConditionEl) codeConfirmConditionEl.textContent = condition;
 
-    // Keep the legacy hidden text node in sync in case anything else reads it.
-    if (codeConfirmText) codeConfirmText.textContent = "Confirm Card Code: " + (codePreview || "(none)");
+    // Confirm button: enable only when all required picks are done
+    _updateConfirmBtnState(/* pickerMode */ false, condKnown);
 
+    if (codeConfirmText) codeConfirmText.textContent = "Confirm Card Code: " + (codePreview || "(none)");
     codeModal.classList.remove("hidden");
     codeModal.setAttribute("aria-hidden", "false");
+  }
+
+  // ---- Name-path: user still needs to pick Set → Rarity → Condition in popup ----
+  // `sets` is the card's sets array: [{ set_name, set_rarity, set_code? }, …]
+  // `existingCondition` is pre-filled from localStorage/State if available.
+  function openCodeConfirmModalWithPicker(sets, existingCondition) {
+    if (!codeModal) return;
+
+    const card   = State?.selectedCard || {};
+    const name   = (manualNameEl?.value || "").trim() || (ocrNameEl?.value || "").trim() || card.name || "—";
+    const cardId = card.id || null;
+    const imgUrl = cardId ? `https://images.ygoprodeck.com/images/cards/${cardId}.jpg` : null;
+    const qty    = (qtyEl?.value || "1").trim() || "1";
+
+    _populateModalArtAndMeta(name, "—", qty, cardId, imgUrl);
+    if (codeConfirmCodeEl) codeConfirmCodeEl.textContent = "—";
+
+    // Picker mode: show pickers, hide static spans
+    _showStaticRow(codeConfirmSetStaticRow,    codeConfirmSetPickRow,    false);
+    _showStaticRow(codeConfirmRarityStaticRow, codeConfirmRarityPickRow, false);
+    _showStaticRow(codeConfirmCondStaticRow,   codeConfirmCondPickRow,   false);
+
+    // Populate Set picker from unique set names
+    const setNames = [...new Set((sets || []).map(p => p.set_name).filter(Boolean))];
+    if (codeConfirmSetPicker) {
+      codeConfirmSetPicker.innerHTML = "";
+      const ph = document.createElement("option"); ph.value = ""; ph.textContent = "please select"; codeConfirmSetPicker.appendChild(ph);
+      setNames.forEach(n => { const o = document.createElement("option"); o.value = n; o.textContent = n; codeConfirmSetPicker.appendChild(o); });
+      codeConfirmSetPicker.value = "";
+    }
+
+    // Rarity picker starts empty + disabled until set is chosen
+    if (codeConfirmRarityPicker) {
+      codeConfirmRarityPicker.innerHTML = "";
+      const ph = document.createElement("option"); ph.value = ""; ph.textContent = "please select"; codeConfirmRarityPicker.appendChild(ph);
+      codeConfirmRarityPicker.disabled = true;
+    }
+
+    // Condition picker
+    _populateConditionPicker(codeConfirmConditionPicker, existingCondition || "");
+
+    // Confirm starts disabled
+    if (codeConfirmConfirmBtn) codeConfirmConfirmBtn.disabled = true;
+
+    // Wire Set → Rarity cascade inside the modal
+    if (codeConfirmSetPicker) {
+      codeConfirmSetPicker.onchange = () => {
+        const chosen = codeConfirmSetPicker.value;
+        const rarities = [...new Set(
+          (sets || []).filter(p => p.set_name === chosen).map(p => p.set_rarity).filter(Boolean)
+        )];
+        if (codeConfirmRarityPicker) {
+          codeConfirmRarityPicker.innerHTML = "";
+          const ph = document.createElement("option"); ph.value = ""; ph.textContent = "please select"; codeConfirmRarityPicker.appendChild(ph);
+          rarities.forEach(r => { const o = document.createElement("option"); o.value = r; o.textContent = r; codeConfirmRarityPicker.appendChild(o); });
+          codeConfirmRarityPicker.disabled = !chosen;
+          codeConfirmRarityPicker.value = rarities.length === 1 ? rarities[0] : "";
+        }
+        // Update code span from the resolved printing
+        const printing = (sets || []).find(p => p.set_name === chosen) || {};
+        if (codeConfirmCodeEl) codeConfirmCodeEl.textContent = printing.set_code || "—";
+        _updateConfirmBtnState(true, false);
+      };
+    }
+    if (codeConfirmRarityPicker) {
+      codeConfirmRarityPicker.onchange = () => _updateConfirmBtnState(true, false);
+    }
+    if (codeConfirmConditionPicker) {
+      codeConfirmConditionPicker.onchange = () => _updateConfirmBtnState(true, false);
+    }
+
+    if (codeConfirmText) codeConfirmText.textContent = "Confirm Card";
+    codeModal.classList.remove("hidden");
+    codeModal.setAttribute("aria-hidden", "false");
+  }
+
+  // Populate a condition <select> from the CONDITIONS constant
+  function _populateConditionPicker(sel, keepValue) {
+    if (!sel) return;
+    sel.innerHTML = "";
+    const ph = document.createElement("option"); ph.value = ""; ph.textContent = "please select"; sel.appendChild(ph);
+    CONDITIONS.forEach(c => {
+      const o = document.createElement("option"); o.value = c.value; o.textContent = c.label; sel.appendChild(o);
+    });
+    if (keepValue && CONDITIONS.some(c => c.value === keepValue)) sel.value = keepValue;
+    else sel.selectedIndex = 0;
+  }
+
+  // Enable/disable the Confirm button based on whether all picks are complete
+  function _updateConfirmBtnState(pickerMode, condAlreadyKnown) {
+    if (!codeConfirmConfirmBtn) return;
+    let ok = true;
+    if (pickerMode) {
+      ok = !!(codeConfirmSetPicker?.value && codeConfirmRarityPicker?.value && codeConfirmConditionPicker?.value);
+    } else if (!condAlreadyKnown) {
+      // Code-match path but condition still needed
+      ok = !!codeConfirmConditionPicker?.value;
+    }
+    codeConfirmConfirmBtn.disabled = !ok;
   }
   function closeCodeConfirmModal() {
     if (!codeModal) return;
@@ -603,7 +742,63 @@
   }
 
   // ---- Wire up code-confirm modal buttons ----
+  // v14.4: When in picker-mode (name path), read the picker selects, write them
+  // back into State and the main form selects, THEN post. This eliminates the
+  // last inline-confirm path: all Set/Rarity/Condition choices happen inside
+  // the popup regardless of whether we arrived via code-match or name lookup.
   codeConfirmConfirmBtn?.addEventListener("click", async () => {
+    // Detect picker-mode: Set picker row is visible (not hidden)
+    const pickerMode = codeConfirmSetPickRow && codeConfirmSetPickRow.style.display !== "none";
+
+    if (pickerMode) {
+      // Read chosen values from the modal pickers
+      const chosenSet    = codeConfirmSetPicker?.value       || "";
+      const chosenRarity = codeConfirmRarityPicker?.value    || "";
+      const chosenCond   = codeConfirmConditionPicker?.value || "";
+
+      // Safety check — button should be disabled until all three are set, but guard anyway
+      if (!chosenSet || !chosenRarity || !chosenCond) {
+        _updateConfirmBtnState(true, false);
+        return;
+      }
+
+      // Write back to State
+      State.selectedSetName  = chosenSet;
+      State.selectedRarity   = chosenRarity;
+      State.selectedCondition = chosenCond;
+
+      // Resolve and write selectedPrinting from the card's sets array
+      const cardSets = State.selectedCard?.sets || [];
+      const resolved = cardSets.find(p => p.set_name === chosenSet && p.set_rarity === chosenRarity) || null;
+      State.selectedPrinting = resolved;
+
+      // Write back to the main form selects so buildRowFromUI() reads correct values
+      if (setSel) {
+        // Ensure the option exists in the main dropdown; if not, add it
+        let setOpt = Array.from(setSel.options).find(o => o.value === chosenSet);
+        if (!setOpt) {
+          setOpt = document.createElement("option");
+          setOpt.value = chosenSet;
+          setOpt.textContent = resolved
+            ? chosenSet + (resolved.set_code ? ` (${resolved.set_code})` : "")
+            : chosenSet;
+          setSel.appendChild(setOpt);
+        }
+        setSel.value = chosenSet;
+      }
+      if (raritySel) {
+        let rarOpt = Array.from(raritySel.options).find(o => o.value === chosenRarity);
+        if (!rarOpt) {
+          rarOpt = document.createElement("option");
+          rarOpt.value = chosenRarity;
+          rarOpt.textContent = chosenRarity;
+          raritySel.appendChild(rarOpt);
+        }
+        raritySel.value = chosenRarity;
+      }
+      if (conditionSel) conditionSel.value = chosenCond;
+    }
+
     closeCodeConfirmModal();
     await postCurrentSelection();
   });
@@ -648,6 +843,10 @@
   // EPIC-93: expose openCodeConfirmModal so scan.js can call
   // window.UI.openCodeConfirmModal() (captureConfirmBtn path).
   UI.openCodeConfirmModal = openCodeConfirmModal;
+
+  // v14.4: expose openCodeConfirmModalWithPicker so lookup.js and scan.js can
+  // route the name path through the popup instead of the inline form dropdowns.
+  UI.openCodeConfirmModalWithPicker = openCodeConfirmModalWithPicker;
 
   // Fix 2: expose postCurrentSelection so captureConfirmBtn can post
   // directly when all fields are already filled (no double-confirm).

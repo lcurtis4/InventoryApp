@@ -1,4 +1,12 @@
-// js/ui/scan.js  — v14.0 (EPIC-93: card-select modal + cue integration)
+// js/ui/scan.js  — v14.4 (EPIC-93: cross-tick accumulator + popup-first name path)
+// v14.4:
+//   • Cross-tick candidate accumulator: across ACCUM_WINDOW_TICKS (3) scan ticks,
+//     if 2+ distinct card IDs appear at score ≥ MULTI_PICK_SCORE, show the
+//     card-select modal. Fixes the UAT issue where a card like "Kewl Tune Rotary"
+//     scanned for 40+ seconds without triggering the picker because each tick
+//     returned a different single candidate at low confidence.
+//   • captureConfirmBtn name-path: lookupBtn.click() now routes to
+//     openCodeConfirmModalWithPicker via lookup.js v14.4 — never inline form.
 // v10.1 changes:
 //   • Listens for `inventory:form:reset` (dispatched by confirm.js after a
 //     successful Post to Sheet). On reset we now:
@@ -45,6 +53,29 @@
   // auto-applying the top hit, even if only one candidate exists in the result
   // array. Matches the new core.js ACCEPTABLE_SCORE floor.
   const MULTI_PICK_SCORE = 0.40;
+
+  // v14.4: Cross-tick candidate accumulator.
+  // Each scan tick gives us 1 best-match candidate from a slightly different OCR
+  // read of the same card name. By itself a single tick only produces 1 candidate,
+  // so the ambiguity check (aboveThreshold.length >= 2) never fires — even though
+  // the scanner is clearly seeing multiple plausible cards across successive reads.
+  //
+  // Strategy: keep a rolling window of the last ACCUM_WINDOW_TICKS top candidates.
+  // If 2+ *distinct card IDs* appear at score >= MULTI_PICK_SCORE within that
+  // window, merge them into a deduped picker list and show the modal.
+  //
+  // We reset the accumulator whenever:
+  //   (a) an exactMatch is found (code match → auto-apply immediately), or
+  //   (b) a single card has won every tick in the window (unambiguous winner), or
+  //   (c) the scanner is resumed / form is reset (clearFormAndState called).
+  const ACCUM_WINDOW_TICKS = 3; // trigger after 3 ticks if still ambiguous
+  let _accumCandidates = []; // [{id, name, score, imageUrl, ...}, ...] across ticks
+  let _accumText       = ""; // OCR text of first tick in current window
+
+  function _resetAccumulator() {
+    _accumCandidates = [];
+    _accumText       = "";
+  }
 
   // Restore a <select> to a single canonical "please select" placeholder.
   // Shared shape with confirm.js resetSelect + lookup.js makePlaceholder so the
@@ -644,6 +675,7 @@
 
   // ── Clear form ─────────────────────────────────────────────────────────────────
   function clearFormAndState() {
+    _resetAccumulator();
     const ocr = $("ocrName");    if (ocr) ocr.value = "";
     const man = $("manualName"); if (man) man.value = "";
     const mc  = $("manualCode"); if (mc)  mc.value  = "";
@@ -681,6 +713,7 @@
 
   // ── Rescan ─────────────────────────────────────────────────────────────────────
   function doRescan() {
+    _resetAccumulator();
     $("ocrName").value = "";
     status($("ocrStatus"), "");
     $("ocrConf").textContent = "accuracy: —";
@@ -812,61 +845,119 @@
       setMatchSource("name-fallback", scannedText || "");
     }
 
-    // v14.3: Ambiguity check — trigger the picker when 2+ candidates each score
-    //   ≥ MULTI_PICK_SCORE (40%), regardless of how many candidates came back.
+    // v14.3/v14.4: Ambiguity check — two-layer strategy:
     //
-    //   Previous behaviour: picker only showed when candidates.length > 1, which
-    //   required both matches to survive the core.js ACCEPTABLE_SCORE=0.65 filter.
-    //   At 40–64% confidence the second (or third) candidate was discarded before
-    //   it could reach the UI, so the top hit was always auto-applied even when the
-    //   OCR was genuinely ambiguous between two plausible card names.
+    // Layer 1 (single tick): if this tick's result already contains 2+ candidates
+    //   each ≥ MULTI_PICK_SCORE AND the top hit is not an exact code match, we can
+    //   show the picker immediately (happens when OCR is clear + DB returns close
+    //   matches with similar scores).
     //
-    //   New behaviour:
-    //     • core.js ACCEPTABLE_SCORE lowered to 0.40 so low-conf candidates survive.
-    //     • Here: if 2+ candidates are ≥ MULTI_PICK_SCORE AND the top hit is not an
-    //       exact code match, route to the picker so the user can choose.
-    //     • A single candidate (or a top hit with exactMatch) still auto-applies as
-    //       before — no regression on the high-confidence path.
-    const aboveThreshold = candidates.filter(c => (c.blendedScore || c.score || 0) >= MULTI_PICK_SCORE);
-    const isAmbiguous    = aboveThreshold.length >= 2 && !best.exactMatch;
+    // Layer 2 (cross-tick accumulator): each name-mode scan tick often yields only
+    //   1 candidate above threshold from a slightly-mangled OCR read. We accumulate
+    //   top candidates across ACCUM_WINDOW_TICKS ticks; if 2+ *distinct card IDs*
+    //   appear, the scanner is genuinely ambiguous and we show the picker.
+    //
+    // Reset accumulator on exact-code match (no ambiguity possible) or when the
+    //   form is reset (clearFormAndState already calls _resetAccumulator via the
+    //   inventory:form:reset listener below).
 
-    if (!isAmbiguous) {
-      // Single clear winner — auto-apply and show the capture-confirm bar.
-      // (Mirrors the original single-candidate path; no double-confirm.)
+    const aboveThreshold = candidates.filter(c => (c.blendedScore || c.score || 0) >= MULTI_PICK_SCORE);
+
+    // Exact match — always auto-apply, no accumulation needed
+    if (best.exactMatch) {
+      _resetAccumulator();
       applyCodeCandidate(best, primaryCode);
       const label = best.set_code ? `${best.set_code} · ${best.set_rarity || "?"}` : (best.set_rarity || "");
-      const confident = best.exactMatch || (best.score || 0) >= 0.90;
-      setAutoStatus(confident
-        ? `Found: ${best.name}. Choose condition + qty, then confirm.`
-        : `Best match: ${best.name}. Choose condition + qty and confirm, or Rescan if wrong.`);
+      setAutoStatus(`Found: ${best.name}. Choose condition + qty, then confirm.`);
       showCaptureConfirmBar(best, label || null);
       return;
     }
 
-    // #90 (EPIC-87, AC-010..013) + v14.3: show the picker when:
-    //   (a) multiple printings of the same card came back from code search, OR
-    //   (b) 2+ name-match candidates each score ≥ MULTI_PICK_SCORE (ambiguous OCR).
-    //   Selecting a tile + in-picker Confirm commits the choice; no double-step.
-    const pickerMsg = isAmbiguous && candidates.length > 1
-      ? `${aboveThreshold.length} possible matches — which card is this?`
-      : `Multiple printings for ${best.name} — choose one below.`;
-    setAutoStatus(pickerMsg);
-    // EPIC-93 Story #96 (AC-002/AC-003): use centered card-select modal popup
-    openCardSelectModal(
-      candidates,
-      primaryCode || "",
-      (picked) => {
-        applyCodeCandidate(picked, primaryCode || picked.set_code || "");
-        if (scanMode === "code") setMatchSource("exact-code", picked.set_code || primaryCode);
-        else setMatchSource("name-fallback", scannedText || "");
-        const lbl = picked.set_code
-          ? `${picked.set_code} · ${picked.set_rarity || ""}`.trim()
-          : (picked.set_rarity || "");
-        setAutoStatus(`Selected: ${picked.name}. Choose condition + qty, then confirm.`);
-        showCaptureConfirmBar(picked, lbl || null);
-      },
-      doRescan
-    );
+    // Layer 1: immediate multi-candidate check (this tick alone)
+    const isAmbiguousNow = aboveThreshold.length >= 2;
+
+    if (isAmbiguousNow) {
+      _resetAccumulator();
+      const pickerMsg = `${aboveThreshold.length} possible matches — which card is this?`;
+      setAutoStatus(pickerMsg);
+      openCardSelectModal(
+        candidates,
+        primaryCode || "",
+        (picked) => {
+          _resetAccumulator();
+          applyCodeCandidate(picked, primaryCode || picked.set_code || "");
+          if (scanMode === "code") setMatchSource("exact-code", picked.set_code || primaryCode);
+          else setMatchSource("name-fallback", scannedText || "");
+          const lbl = picked.set_code
+            ? `${picked.set_code} · ${picked.set_rarity || ""}`.trim()
+            : (picked.set_rarity || "");
+          setAutoStatus(`Selected: ${picked.name}. Choose condition + qty, then confirm.`);
+          showCaptureConfirmBar(picked, lbl || null);
+        },
+        doRescan
+      );
+      return;
+    }
+
+    // Layer 2: cross-tick accumulation for name-mode ambiguity
+    // Only accumulate when scanMode is "name" (code mode with 1 candidate is fine to auto-apply)
+    if (scanMode === "name") {
+      // Seed the window text on first tick
+      if (!_accumText) _accumText = scannedText || "";
+
+      // Merge top candidate(s) from this tick into the accumulator
+      aboveThreshold.forEach(c => {
+        if (!_accumCandidates.some(a => a.id === c.id)) {
+          _accumCandidates.push(c);
+        } else {
+          // Update score to highest seen so far
+          const existing = _accumCandidates.find(a => a.id === c.id);
+          if (existing && (c.blendedScore || c.score || 0) > (existing.blendedScore || existing.score || 0)) {
+            Object.assign(existing, c);
+          }
+        }
+      });
+
+      // Check if we've accumulated enough ticks (guard: _accumCandidates grows only when IDs differ)
+      const distinctIds = new Set(_accumCandidates.map(c => c.id)).size;
+      const tickCount   = _accumCandidates.length;
+
+      if (distinctIds >= 2 && tickCount >= ACCUM_WINDOW_TICKS) {
+        // Ambiguity confirmed across multiple ticks — show the picker
+        const accumulated = [..._accumCandidates].sort((a, b) =>
+          (b.blendedScore || b.score || 0) - (a.blendedScore || a.score || 0)
+        );
+        _resetAccumulator();
+        setAutoStatus(`${accumulated.length} possible matches — which card is this?`);
+        openCardSelectModal(
+          accumulated,
+          primaryCode || "",
+          (picked) => {
+            _resetAccumulator();
+            applyCodeCandidate(picked, primaryCode || picked.set_code || "");
+            setMatchSource("name-fallback", _accumText || scannedText || "");
+            const lbl = picked.set_code
+              ? `${picked.set_code} · ${picked.set_rarity || ""}`.trim()
+              : (picked.set_rarity || "");
+            setAutoStatus(`Selected: ${picked.name}. Choose condition + qty, then confirm.`);
+            showCaptureConfirmBar(picked, lbl || null);
+          },
+          doRescan
+        );
+        return;
+      }
+    }
+
+    // Single clear winner (or accumulation not yet triggered) — auto-apply.
+    // If distinctIds === 1 across multiple ticks, the scanner is confident in this card.
+    _resetAccumulator();
+    applyCodeCandidate(best, primaryCode);
+    const label = best.set_code ? `${best.set_code} · ${best.set_rarity || "?"}` : (best.set_rarity || "");
+    const confident = (best.score || 0) >= 0.90;
+    setAutoStatus(confident
+      ? `Found: ${best.name}. Choose condition + qty, then confirm.`
+      : `Best match: ${best.name}. Choose condition + qty and confirm, or Rescan if wrong.`);
+    showCaptureConfirmBar(best, label || null);
   }
 
   // ── Bind UI actions ────────────────────────────────────────────────────────────
@@ -988,10 +1079,18 @@
           }
         }
       } else {
-        // Name path: no printing resolved yet — trigger printings lookup.
+        // Name path: no printing resolved yet — fetch printings and open the
+        // picker popup directly. NEVER call lookupBtn.click() here because that
+        // populates the inline form dropdowns and leaves the user without a popup.
+        // v14.4: all set/rarity/condition selection goes through the popup.
         const confText = $("ocrConf")?.textContent || "";
         const acc = parseInt(confText.replace(/[^0-9]/g, ""), 10) || 0;
         if (acc >= MIN_ACC || acc >= 65 || confText.includes("exact")) {
+          // Trigger the lookup flow, which will call openCodeConfirmModalWithPicker
+          // at the end via lookup.js's _openPickerForCard() helper.
+          // We route through the existing lookupBtn machinery so all the state
+          // setup (State.selectedCard, populateSetDropdown, safety-net) runs
+          // exactly once. lookup.js v14.4 will open the popup when ready.
           $("lookupBtn")?.click();
         } else {
           status($("ocrStatus"), `Name accepted. Click "Find Printings" to continue.`);
