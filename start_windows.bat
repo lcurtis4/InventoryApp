@@ -6,27 +6,27 @@ set URL=http://localhost:%PORT%/
 
 cd /d "%~dp0"
 
-echo Starting local server on %URL% ...
+echo Starting local dev server (no-cache) on %URL% ...
 echo.
 
 where py >nul 2>nul
 if %ERRORLEVEL%==0 (
   start "" "%URL%"
-  py -3 -m http.server %PORT%
+  py -3 server/dev_server.py %PORT%
   goto :eof
 )
 
 where python >nul 2>nul
 if %ERRORLEVEL%==0 (
   start "" "%URL%"
-  python -m http.server %PORT%
+  python server/dev_server.py %PORT%
   goto :eof
 )
 
 where python3 >nul 2>nul
 if %ERRORLEVEL%==0 (
   start "" "%URL%"
-  python3 -m http.server %PORT%
+  python3 server/dev_server.py %PORT%
   goto :eof
 )
 
