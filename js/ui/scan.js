@@ -40,6 +40,12 @@
 
   const MIN_ACC = typeof State.MIN_ACCURACY === "number" ? State.MIN_ACCURACY : 80;
 
+  // v14.3: Minimum score for a candidate to count toward the ambiguity check.
+  // When 2+ candidates each reach this threshold, we show the picker instead of
+  // auto-applying the top hit, even if only one candidate exists in the result
+  // array. Matches the new core.js ACCEPTABLE_SCORE floor.
+  const MULTI_PICK_SCORE = 0.40;
+
   // Restore a <select> to a single canonical "please select" placeholder.
   // Shared shape with confirm.js resetSelect + lookup.js makePlaceholder so the
   // Set/Rarity dropdowns never end up blank (#86 + UAT follow-up).
@@ -587,27 +593,38 @@
     status($("ocrStatus"), `Code match: ${cand.set_code || scannedCode} → ${name}`);
     $("ocrConf").textContent = `code: exact`;
 
-    // v8.2: highlight fields still needing input (set/rarity already filled by code)
-    // v16 (#5): Condition is intentionally NOT highlighted — its default is
-    // acceptable and does not require a manual pick. applyNeedsInput() also
-    // hard-forces condition:false, so this is belt-and-suspenders.
-    const qtyVal     = parseInt($("qty")?.value || "0", 10);
-    applyNeedsInput({
-      set:       false,          // prefilled by code
-      rarity:    false,          // prefilled by code
-      condition: false,          // #5: never highlight Condition
-      qty:       !(qtyVal >= 1),
-    });
-
     enableQtyIfReady();
-    // EPIC-93 (AC-004/AC-005): fire cue based on readiness after code candidate applied
+
+    // v14.3: After applying a code candidate, check which required fields are
+    // actually missing in the live DOM and highlight ALL of them, not just
+    // Condition. Previously this block hard-coded only conditionSelect, which
+    // meant Set/Rarity went unhighlighted when the candidate had no set_name
+    // or set_rarity (name-only OCR path with a code prefix that resolved to
+    // a card but no printing data). Now we collect every missing field and
+    // delegate to window.UI.highlightMissingFields (confirm.js shared helper)
+    // so the visual behaviour is identical everywhere.
     try {
-      const condVal  = $("conditionSelect")?.value;
-      const qtyFinal = parseInt($("qty")?.value || "0", 10);
-      if (condVal && qtyFinal >= 1) {
+      const setVal    = $("setSelect")?.value    || "";
+      const rarVal    = $("raritySelect")?.value || "";
+      const condVal   = $("conditionSelect")?.value || "";
+      const qtyFinal  = parseInt($("qty")?.value || "0", 10);
+
+      if (setVal && rarVal && condVal && qtyFinal >= 1) {
+        // All fields populated — fire the green ready cue
         window.UI?.cue?.fireReady?.();
-      } else if (!condVal) {
-        window.UI?.cue?.fireNeedsInput?.($("conditionSelect"));
+      } else {
+        // Build missing list and highlight every unfilled field with amber ring
+        const missing = [];
+        if (!setVal)       missing.push("set");
+        if (!rarVal)       missing.push("rarity");
+        if (!condVal)      missing.push("condition");
+        if (qtyFinal < 1)  missing.push("qty");
+        if (window.UI && typeof window.UI.highlightMissingFields === "function") {
+          window.UI.highlightMissingFields(missing);
+        } else {
+          // Fallback: at minimum fire the tone on conditionSelect (legacy behaviour)
+          if (!condVal) window.UI?.cue?.fireNeedsInput?.($("conditionSelect"));
+        }
       }
     } catch (_) {}
   }
@@ -795,14 +812,27 @@
       setMatchSource("name-fallback", scannedText || "");
     }
 
-    // UAT fix (issue: "confirm the card twice"): the multi-option picker is
-    //   ONLY for disambiguating multiple printings. With a single candidate we
-    //   must route straight to the capture-confirm bar regardless of OCR
-    //   confidence — otherwise a low-confidence single match (e.g. an 84% name
-    //   fallback) showed the picker (pick tile + Confirm) AND THEN the
-    //   capture-confirm bar, forcing the user to confirm the same card twice.
-    //   Confidence only affects the status copy now, not the branch.
-    if (candidates.length === 1) {
+    // v14.3: Ambiguity check — trigger the picker when 2+ candidates each score
+    //   ≥ MULTI_PICK_SCORE (40%), regardless of how many candidates came back.
+    //
+    //   Previous behaviour: picker only showed when candidates.length > 1, which
+    //   required both matches to survive the core.js ACCEPTABLE_SCORE=0.65 filter.
+    //   At 40–64% confidence the second (or third) candidate was discarded before
+    //   it could reach the UI, so the top hit was always auto-applied even when the
+    //   OCR was genuinely ambiguous between two plausible card names.
+    //
+    //   New behaviour:
+    //     • core.js ACCEPTABLE_SCORE lowered to 0.40 so low-conf candidates survive.
+    //     • Here: if 2+ candidates are ≥ MULTI_PICK_SCORE AND the top hit is not an
+    //       exact code match, route to the picker so the user can choose.
+    //     • A single candidate (or a top hit with exactMatch) still auto-applies as
+    //       before — no regression on the high-confidence path.
+    const aboveThreshold = candidates.filter(c => (c.blendedScore || c.score || 0) >= MULTI_PICK_SCORE);
+    const isAmbiguous    = aboveThreshold.length >= 2 && !best.exactMatch;
+
+    if (!isAmbiguous) {
+      // Single clear winner — auto-apply and show the capture-confirm bar.
+      // (Mirrors the original single-candidate path; no double-confirm.)
       applyCodeCandidate(best, primaryCode);
       const label = best.set_code ? `${best.set_code} · ${best.set_rarity || "?"}` : (best.set_rarity || "");
       const confident = best.exactMatch || (best.score || 0) >= 0.90;
@@ -813,13 +843,14 @@
       return;
     }
 
-    // #90 (EPIC-87, AC-010..013): revert #55's silent auto-pick. When a lookup
-    //   returns multiple printings, show the multi-option picker so the user
-    //   selects the correct Set/Rarity printing. Selecting a tile + the single
-    //   in-picker Confirm commits the choice (no codeConfirmModal double-step),
-    //   then routes into the existing capture-confirm bar where Condition + Qty
-    //   stay (unchanged). Single-match branch above is untouched.
-    setAutoStatus(`Multiple printings for ${best.name} — choose one below.`);
+    // #90 (EPIC-87, AC-010..013) + v14.3: show the picker when:
+    //   (a) multiple printings of the same card came back from code search, OR
+    //   (b) 2+ name-match candidates each score ≥ MULTI_PICK_SCORE (ambiguous OCR).
+    //   Selecting a tile + in-picker Confirm commits the choice; no double-step.
+    const pickerMsg = isAmbiguous && candidates.length > 1
+      ? `${aboveThreshold.length} possible matches — which card is this?`
+      : `Multiple printings for ${best.name} — choose one below.`;
+    setAutoStatus(pickerMsg);
     // EPIC-93 Story #96 (AC-002/AC-003): use centered card-select modal popup
     openCardSelectModal(
       candidates,

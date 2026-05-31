@@ -56,7 +56,11 @@
   const IMAGE_ASSIST_TIMEOUT_MS = 1200;
 
   // Minimum score to include a candidate at all.
-  const ACCEPTABLE_SCORE   = 0.65;
+  // v14.3: lowered from 0.65 → 0.40 so that ambiguous low-confidence matches
+  // (40–64%) reach the picker instead of being silently discarded. The picker
+  // in scan.js now triggers when 2+ candidates are ≥ MULTI_PICK_SCORE (0.40),
+  // giving the user an explicit choice rather than auto-applying the top hit.
+  const ACCEPTABLE_SCORE   = 0.40;
 
   window.ScannerParts._internal = window.ScannerParts._internal || {};
   window.ScannerParts._internal.lastDetectedRect = () => _lastDetectedRect;
