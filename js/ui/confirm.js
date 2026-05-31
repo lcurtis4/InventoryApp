@@ -1,4 +1,4 @@
-// js/ui/confirm.js — v14.1
+// js/ui/confirm.js — v14.2
 // Fix 1: Success modal shows "Inventory total" row when card already existed (merged).
 // Fix 2: postCurrentSelection exposed on window.UI so captureConfirmBtn can post
 //        directly without re-opening codeConfirmModal (no double-confirm).
@@ -6,6 +6,20 @@
 //        via window.UI.cue.fireNeedsInput + manual cue-needs-input class on the rest.
 // Fix 4: confirmBtn click gate runs validateRow BEFORE opening codeConfirmModal;
 //        the modal never opens with missing fields.
+//
+// v14.2 UAT fixes:
+//   • buildRowFromUI() reads set/rarity EXCLUSIVELY from the live DOM <select> values,
+//     never from State.selectedSetName / State.selectedRarity. State was stale after
+//     form reset, causing "please select" placeholders to be bypassed by old State values.
+//   • validateRow() no longer checks options.length to determine "populated". Set and
+//     rarity are ALWAYS required (non-empty DOM value). This is the correct behaviour:
+//     if the dropdown shows "please select" the gate must block regardless of how many
+//     options exist.
+//   • codeConfirmModal is removed from the captureConfirmBtn incomplete-form path.
+//     When any field is missing, highlights fire + an inline status error shows instead
+//     of opening the modal (which allowed posting with placeholder values).
+//   • highlightMissingFields() extracted as a shared helper called by both validateRow
+//     and the new captureConfirmBtn gate path — one highlight system, consistent behaviour.
 //
 // v14.0 (EPIC-93): unified confirm UX — art-forward modal, card-select popup, cue system.
 //
@@ -301,17 +315,25 @@
   // ---- Build row from current UI state ----
   // Field names and shape are IDENTICAL to v6 (last known-good posting version).
   // price is intentionally left blank.
+  //
+  // v14.2: set and rarity are read EXCLUSIVELY from the live DOM <select> values.
+  // Previously we fell back to State.selectedSetName / State.selectedRarity first,
+  // which caused stale State to bypass the "please select" placeholder gate —
+  // the dropdown showed "please select" but row.set was non-empty from old State.
   function buildRowFromUI() {
-    const name     = (manualNameEl?.value || "").trim() || (ocrNameEl?.value || "").trim();
-    const setName  = State?.selectedSetName  || getSelectedValue(setSel)    || getSelectedText(setSel);
-    const rarity   = State?.selectedRarity   || getSelectedValue(raritySel) || getSelectedText(raritySel);
-    const printing = State?.selectedPrinting || null;
+    const name = (manualNameEl?.value || "").trim() || (ocrNameEl?.value || "").trim();
 
+    // DOM-first: only read the <select> element's current value. An empty string
+    // means the placeholder is selected (→ the gate will block posting).
+    const setName = getSelectedValue(setSel);
+    const rarity  = getSelectedValue(raritySel);
+
+    const printing = State?.selectedPrinting || null;
     let code = printing?.set_code || "";
     if (!code) code = extractCodeFromOption(getSelectedText(setSel));
 
     const qty       = parseInt(qtyEl?.value || "1", 10) || 1;
-    const condition = getSelectedValue(conditionSel) || getSelectedText(conditionSel);
+    const condition = getSelectedValue(conditionSel);
 
     return {
       timestamp: new Date().toISOString(),
@@ -326,40 +348,68 @@
     };
   }
 
+  // ---- Shared highlight helper ----
+  // Fires amber-ring cue on EVERY element in the `missing` array.
+  // Called by both validateRow and the captureConfirmBtn gate so the two
+  // code paths produce identical visual feedback (one highlight system).
+  //
+  // cue.fireNeedsInput(el) does clearCues() + adds ring on the first element
+  // only. We then manually add the ring to the remaining elements AND wire
+  // a change/input listener on each so their rings auto-clear when filled.
+  function highlightMissingFields(missing) {
+    try {
+      const cue = window.UI?.cue;
+      const fieldMap = { set: setSel, rarity: raritySel, condition: conditionSel, qty: qtyEl };
+      const missingEls = missing.map(k => fieldMap[k]).filter(Boolean);
+      if (!missingEls.length) return;
+
+      if (cue) {
+        // Primary cue fires tone + amber ring + auto-clear listener on first el
+        cue.fireNeedsInput(missingEls[0]);
+      } else {
+        // Fallback when cue.js not loaded: just add the class
+        missingEls[0].classList.add("cue-needs-input");
+      }
+
+      // Add amber ring + auto-clear listener to ALL remaining missing elements
+      missingEls.slice(1).forEach(el => {
+        el.classList.add("cue-needs-input");
+        // Auto-clear when the user fills the field (mirrors cue.fireNeedsInput behaviour)
+        const off = () => {
+          el.classList.remove("cue-needs-input");
+          el.removeEventListener("change", off);
+          el.removeEventListener("input",  off);
+        };
+        el.addEventListener("change", off, { once: true });
+        el.addEventListener("input",  off, { once: true });
+      });
+    } catch (_) {}
+  }
+
+  // Expose so scan.js captureConfirmBtn gate can call it directly
+  UI.highlightMissingFields = highlightMissingFields;
+
   // ---- Validate row + highlight ALL missing fields (Fix 3 + Fix 4) ----
   // Returns an error string if any required field is missing, null if OK.
-  // Also fires cue.fireNeedsInput() on EVERY unfilled dropdown so the user
-  // can see at a glance exactly what still needs attention.
+  // Also fires cue highlights on EVERY unfilled dropdown.
+  //
+  // v14.2: set and rarity are ALWAYS required. The old options.length check
+  // ("required only when populated") was the root cause of the post-gate
+  // bypass: a populated dropdown that showed "please select" was being
+  // skipped because State had a stale value. Now we just check the DOM value.
   function validateRow(row) {
     const missing = []; // collect all defects before deciding what to highlight
 
-    if (!row.name) missing.push("name");
-
-    // Set and Rarity are required when their dropdowns have been populated
-    // (options.length > 1 = placeholder + at least one real option).
-    // This matches the same logic in state.js enableQtyIfReady.
-    const setPopulated    = setSel    && setSel.options.length    > 1;
-    const rarityPopulated = raritySel && raritySel.options.length > 1;
-    if (setPopulated    && !row.set)       missing.push("set");
-    if (rarityPopulated && !row.rarity)    missing.push("rarity");
-
+    if (!row.name)      missing.push("name");
+    if (!row.set)       missing.push("set");
+    if (!row.rarity)    missing.push("rarity");
     if (!row.condition) missing.push("condition");
     if (!row.qty || row.qty < 1) missing.push("qty");
 
     if (missing.length === 0) return null;
 
-    // Fire cue highlights on ALL missing dropdowns (Fix 3)
-    try {
-      const cue = window.UI?.cue;
-      if (cue) {
-        const fieldMap = { set: setSel, rarity: raritySel, condition: conditionSel, qty: qtyEl };
-        const missingEls = missing.map(k => fieldMap[k]).filter(Boolean);
-        // Primary cue fires tone + amber ring on first el
-        if (missingEls[0]) cue.fireNeedsInput(missingEls[0]);
-        // Add amber ring to ALL other missing fields too
-        missingEls.slice(1).forEach(el => el.classList.add("cue-needs-input"));
-      }
-    } catch (_) {}
+    // Fire amber highlights on ALL missing fields (Fix 3)
+    highlightMissingFields(missing);
 
     // Return first human-readable error message
     if (missing.includes("name"))      return "Please enter a card name.";

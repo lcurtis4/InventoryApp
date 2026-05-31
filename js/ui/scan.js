@@ -104,20 +104,20 @@
   window.UI.setMatchSource = setMatchSource;
 
   // ── .needs-input highlight helpers (v8.2) ────────────────────────────────────
-  // Adds amber border to fields still needing input after a code-confirmed match.
-  // Required: set, rarity, condition, qty.
-  // Fields prefilled by code should NOT be highlighted.
+  // v14.2: applyNeedsInput now passes opts through without forcing any field
+  // to false. The old hardcoded suppression of set/condition was left over from
+  // a time when those fields were always pre-filled by the code-match path.
+  // The canonical highlight path is now confirm.js highlightMissingFields()
+  // (cue-needs-input amber ring). applyNeedsInput is kept for backward compat
+  // with the legacy .needs-input CSS class but no longer overrides caller intent.
   function applyNeedsInput(opts) {
     // opts: { set: bool, rarity: bool, condition: bool, qty: bool }
-    // v16 (#5): Condition must NEVER receive .needs-input — its default value is
-    // acceptable on its own and does not require a manual pick. We force the
-    // conditionSelect entry to `false` here so no caller (current or future)
-    // can re-introduce the stray highlight, and we proactively strip any
-    // pre-existing highlight on it as a belt-and-suspenders guard.
-    // #85 (EPIC-87, AC-001): Set dropdown is now treated the same way —
-    //   setSelect is forced to `false` so it can never receive the amber
-    //   highlight from any caller.
-    const ids = { setSelect: false, raritySelect: opts.rarity, conditionSelect: false, qty: opts.qty };
+    const ids = {
+      setSelect:       !!opts.set,
+      raritySelect:    !!opts.rarity,
+      conditionSelect: !!opts.condition,
+      qty:             !!opts.qty,
+    };
     for (const [id, needs] of Object.entries(ids)) {
       const el = $(id);
       if (!el) continue;
@@ -899,38 +899,61 @@
       }
     });
 
-    // Accept & Confirm bar (Fix 2: no double-confirm)
-    // When the card is fully resolved (set + rarity + condition + qty all present),
-    // skip codeConfirmModal entirely and post directly — the user already tapped
-    // Accept & Confirm, a second modal would be redundant.
-    // Only fall back to codeConfirmModal when any required field is still missing
-    // (so they can fill it in before posting).
+    // Accept & Confirm bar (v14.2: no double-confirm, no codeConfirmModal bypass)
+    //
+    // Flow:
+    //   1. If printing is resolved (set+rarity in State from code/picker): read live
+    //      DOM values, check all required fields. If all filled → post directly.
+    //      If any field is missing → fire amber highlights on ALL missing fields
+    //      and show inline error. codeConfirmModal is NEVER opened from this path.
+    //   2. If printing not resolved yet (name-only path): trigger printings lookup.
+    //
+    // Why codeConfirmModal was removed from the incomplete-form path:
+    //   The modal's Confirm button called postCurrentSelection() which called
+    //   buildRowFromUI() which used State.selectedSetName/Rarity (stale) instead
+    //   of the live DOM value, so it posted even when the dropdown showed
+    //   "please select". Removing the modal eliminates that bypass entirely.
     $("captureConfirmBtn")?.addEventListener("click", () => {
       hideCaptureConfirmBar();
       if (State.selectedSetName && State.selectedRarity) {
         enableQtyIfReady();
-        // All required fields must be filled before we skip the review modal.
-        // Check condition, qty, AND that set/rarity are actually selected.
-        const condVal   = $("conditionSelect")?.value;
+        // Read required fields from the live DOM — never from State (State is stale).
+        const condVal   = $("conditionSelect")?.value || "";
         const qtyVal    = parseInt($("qty")?.value || "0", 10);
-        const setVal    = $("setSelect")?.value;
-        const rarityVal = $("raritySelect")?.value;
+        const setVal    = $("setSelect")?.value    || "";
+        const rarityVal = $("raritySelect")?.value || "";
         const allFilled = !!(condVal && qtyVal >= 1 && setVal && rarityVal);
 
         if (allFilled) {
-          // All fields complete — post directly, no extra modal needed (Fix 2)
+          // All fields complete — post directly, no modal (Fix 2)
           if (window.UI && typeof window.UI.postCurrentSelection === "function") {
             window.UI.postCurrentSelection();
           } else {
             $("confirmBtn")?.click();
           }
         } else {
-          // A field is still missing — open the review modal so user can fill it
-          const previewCode = State?.selectedPrinting?.set_code || "";
-          if (window.UI && typeof window.UI.openCodeConfirmModal === "function") {
-            window.UI.openCodeConfirmModal(previewCode);
-          } else {
-            $("confirmBtn")?.click();
+          // One or more fields missing — fire amber highlights on ALL of them
+          // and surface a status error. Do NOT open codeConfirmModal (it bypassed
+          // the gate by reading stale State instead of the live DOM).
+          const missing = [];
+          if (!setVal)      missing.push("set");
+          if (!rarityVal)   missing.push("rarity");
+          if (!condVal)     missing.push("condition");
+          if (qtyVal < 1)   missing.push("qty");
+          // Delegate highlighting to confirm.js shared helper (one system, Fix 3)
+          if (window.UI && typeof window.UI.highlightMissingFields === "function") {
+            window.UI.highlightMissingFields(missing);
+          }
+          // Surface first missing field as an error in the status bar
+          const firstLabel = { set: "Set", rarity: "Rarity", condition: "Condition", qty: "Qty" };
+          const firstMissing = missing[0];
+          const errMsg = firstMissing
+            ? `Please select a ${firstLabel[firstMissing] || firstMissing} before posting.`
+            : "Please fill out all required fields.";
+          const confirmStatus = $("confirmPickStatus") || $("confirmStatus");
+          if (confirmStatus) {
+            confirmStatus.textContent = errMsg;
+            confirmStatus.className = "status error";
           }
         }
       } else {
