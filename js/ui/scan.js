@@ -40,6 +40,23 @@
 
   const MIN_ACC = typeof State.MIN_ACCURACY === "number" ? State.MIN_ACCURACY : 80;
 
+  // Restore a <select> to a single canonical "please select" placeholder.
+  // Shared shape with confirm.js resetSelect + lookup.js makePlaceholder so the
+  // Set/Rarity dropdowns never end up blank (#86 + UAT follow-up).
+  function setPlaceholder(sel) {
+    if (!sel) return;
+    while (sel.firstChild) sel.removeChild(sel.firstChild);
+    const ph = document.createElement("option");
+    ph.value = "";
+    ph.textContent = "please select";
+    ph.disabled = true;
+    ph.selected = true;
+    sel.appendChild(ph);
+    sel.value = "";
+    if (sel.dataset) sel.dataset.populated = "0";
+    sel.classList.remove("needs-input");
+  }
+
   // ── Pause/Resume toggle ───────────────────────────────────────────────────────
   let isPaused = false;
   function setTogglePaused(paused) {
@@ -437,6 +454,11 @@
       setSel.appendChild(opt);
       setSel.value = cand.set_name;
       setSel.classList.remove("needs-input");
+    } else if (setSel) {
+      // UAT fix: a name-fallback candidate carries no set_name, so don't leave
+      //   the dropdown BLANK — restore the canonical "please select" placeholder.
+      //   ("Find Printings" will then populate the real set options.)
+      setPlaceholder(setSel);
     }
 
     const rarSel = $("raritySelect");
@@ -447,6 +469,9 @@
       rarSel.appendChild(opt);
       rarSel.value = cand.set_rarity;
       rarSel.classList.remove("needs-input");
+    } else if (rarSel) {
+      // UAT fix: same as Set — restore the placeholder instead of a blank box.
+      setPlaceholder(rarSel);
     }
 
     status($("ocrStatus"), `Code match: ${cand.set_code || scannedCode} → ${name}`);
@@ -643,11 +668,20 @@
       setMatchSource("name-fallback", scannedText || "");
     }
 
-    // Single confident match → populate directly
-    if (candidates.length === 1 && (best.exactMatch || (best.score || 0) >= 0.90)) {
+    // UAT fix (issue: "confirm the card twice"): the multi-option picker is
+    //   ONLY for disambiguating multiple printings. With a single candidate we
+    //   must route straight to the capture-confirm bar regardless of OCR
+    //   confidence — otherwise a low-confidence single match (e.g. an 84% name
+    //   fallback) showed the picker (pick tile + Confirm) AND THEN the
+    //   capture-confirm bar, forcing the user to confirm the same card twice.
+    //   Confidence only affects the status copy now, not the branch.
+    if (candidates.length === 1) {
       applyCodeCandidate(best, primaryCode);
       const label = best.set_code ? `${best.set_code} · ${best.set_rarity || "?"}` : (best.set_rarity || "");
-      setAutoStatus(`Found: ${best.name}. Choose condition + qty, then confirm.`);
+      const confident = best.exactMatch || (best.score || 0) >= 0.90;
+      setAutoStatus(confident
+        ? `Found: ${best.name}. Choose condition + qty, then confirm.`
+        : `Best match: ${best.name}. Choose condition + qty and confirm, or Rescan if wrong.`);
       showCaptureConfirmBar(best, label || null);
       return;
     }
@@ -816,4 +850,6 @@
   window.UI.scan.bind = bind;
   // #90 (EPIC-87): expose the multi-option picker for direct use/testing.
   window.UI.scan.showCandidatesPicker = showCandidatesPicker;
+  // UAT: expose the scan-result router for direct use/testing.
+  window.UI.scan.handleScanResult = handleScanResult;
 })();
