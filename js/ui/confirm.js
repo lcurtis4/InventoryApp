@@ -1,4 +1,13 @@
-// js/ui/confirm.js — v14.0 (EPIC-93: unified confirm UX)
+// js/ui/confirm.js — v14.1
+// Fix 1: Success modal shows "Inventory total" row when card already existed (merged).
+// Fix 2: postCurrentSelection exposed on window.UI so captureConfirmBtn can post
+//        directly without re-opening codeConfirmModal (no double-confirm).
+// Fix 3: validateRow highlights ALL unfilled dropdowns (set, rarity, condition)
+//        via window.UI.cue.fireNeedsInput + manual cue-needs-input class on the rest.
+// Fix 4: confirmBtn click gate runs validateRow BEFORE opening codeConfirmModal;
+//        the modal never opens with missing fields.
+//
+// v14.0 (EPIC-93): unified confirm UX — art-forward modal, card-select popup, cue system.
 //
 // v13.4 changes (Sprint 1 — closes #3, #4, #20, #21, #22):
 //   • Issue #3 (v18 PRICE-OFF): no price line in the success modal markup.
@@ -179,7 +188,11 @@
       ? `<img class="cc-art" src="${imgUrl}" alt="${row.name}" onerror="this.style.display='none'" />`
       : `<div class="cc-art cc-art--missing" aria-hidden="true"></div>`;
     const mergeTag = isMerged
-      ? `<span class="merge-tag">(merged &times; ${mergedQty})</span>`
+      ? `<span class="merge-tag">+${row.qty} merged</span>`
+      : "";
+    // Fix 1: show inventory total line only when the card already existed in the sheet
+    const totalLine = (isMerged && Number.isFinite(mergedQty))
+      ? `<div class="cc-row cc-row--total"><span class="cc-label">Inventory total</span><span class="cc-value cc-total">${mergedQty}</span></div>`
       : "";
     return `
       <div class="cc-card">
@@ -191,6 +204,7 @@
           <div class="cc-row"><span class="cc-label">Rarity</span><span class="cc-value">${row.rarity || "\u2014"}</span></div>
           <div class="cc-row"><span class="cc-label">Qty added</span><span class="cc-value">${row.qty}</span></div>
           <div class="cc-row"><span class="cc-label">Condition</span><span class="cc-value">${row.condition || "\u2014"}</span></div>
+          ${totalLine}
         </div>
       </div>`;
   }
@@ -312,13 +326,49 @@
     };
   }
 
-  // ---- Validate row before posting ----
+  // ---- Validate row + highlight ALL missing fields (Fix 3 + Fix 4) ----
+  // Returns an error string if any required field is missing, null if OK.
+  // Also fires cue.fireNeedsInput() on EVERY unfilled dropdown so the user
+  // can see at a glance exactly what still needs attention.
   function validateRow(row) {
-    // v10.2: name + condition + qty only. Set/Rarity/Code are optional.
-    if (!row.name)                return "Please choose a card name (Manual or Scanned).";
-    if (!row.condition)           return "Please choose a Condition.";
-    if (!row.qty || row.qty < 1) return "Quantity must be at least 1.";
-    return null;
+    const missing = []; // collect all defects before deciding what to highlight
+
+    if (!row.name) missing.push("name");
+
+    // Set and Rarity are required whenever the card was looked up via the
+    // database path (State.selectedPrinting populated). For manual-name-only
+    // entries they remain optional (same leniency as before).
+    const hasResolvedPrinting = !!(State?.selectedPrinting || State?.selectedSetName);
+    if (hasResolvedPrinting && !row.set)    missing.push("set");
+    if (hasResolvedPrinting && !row.rarity) missing.push("rarity");
+
+    if (!row.condition) missing.push("condition");
+    if (!row.qty || row.qty < 1) missing.push("qty");
+
+    if (missing.length === 0) return null;
+
+    // Fire cue highlights on ALL missing dropdowns (Fix 3)
+    try {
+      const cue = window.UI?.cue;
+      if (cue) {
+        // fireNeedsInput only takes one element, so call it on the most
+        // important missing field first; then add the amber ring class
+        // manually to the others (clearCues will remove them all at once).
+        const fieldMap = { set: setSel, rarity: raritySel, condition: conditionSel, qty: qtyEl };
+        const missingEls = missing.map(k => fieldMap[k]).filter(Boolean);
+        // Primary cue fires tone + ring on first el, then we add rings to the rest
+        if (missingEls[0]) cue.fireNeedsInput(missingEls[0]);
+        missingEls.slice(1).forEach(el => el.classList.add("cue-needs-input"));
+      }
+    } catch (_) {}
+
+    // Return first human-readable error message
+    if (missing.includes("name"))      return "Please enter a card name.";
+    if (missing.includes("set"))       return "Please select a Set.";
+    if (missing.includes("rarity"))    return "Please select a Rarity.";
+    if (missing.includes("condition")) return "Please choose a Condition.";
+    if (missing.includes("qty"))       return "Quantity must be at least 1.";
+    return "Please fill out all required fields.";
   }
 
   // ---- Append to recent-items grid (de-duped by name+set+code+rarity+condition) ----
@@ -518,10 +568,20 @@
     if (confirmBtn) confirmBtn.disabled = false;
   });
 
-  // ---- Primary Post to Sheet button ----
+  // ---- Primary Post to Sheet button (Fix 4: validation gate) ----
+  // Run validateRow BEFORE opening codeConfirmModal so the modal only opens
+  // when the form is complete. Highlights all missing fields via cue (Fix 3).
   confirmBtn?.addEventListener("click", (e) => {
     e.preventDefault();
     if (inFlight) return;
+
+    // Gate: validate all required fields first
+    const row = buildRowFromUI();
+    const gateErr = validateRow(row);
+    if (gateErr) {
+      showStatus(gateErr, "error");
+      return;
+    }
 
     const previewCode = State?.selectedPrinting?.set_code || extractCodeFromOption(getSelectedText(setSel));
     if (codeModal) {
@@ -539,4 +599,8 @@
   // EPIC-93: expose openCodeConfirmModal so scan.js can call
   // window.UI.openCodeConfirmModal() (captureConfirmBtn path).
   UI.openCodeConfirmModal = openCodeConfirmModal;
+
+  // Fix 2: expose postCurrentSelection so captureConfirmBtn can post
+  // directly when all fields are already filled (no double-confirm).
+  UI.postCurrentSelection = postCurrentSelection;
 })();

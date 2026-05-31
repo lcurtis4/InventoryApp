@@ -899,22 +899,37 @@
       }
     });
 
-    // Accept & Confirm bar — v13.1: behave the same as the code-path confirm flow.
-    // If we already have a resolved printing (set + rarity present), open the
-    // codeConfirmModal review card (identical UX to the code path). Otherwise,
-    // fall back to the legacy name-path lookup trigger.
+    // Accept & Confirm bar (Fix 2: no double-confirm)
+    // When the card is fully resolved (set + rarity + condition + qty all present),
+    // skip codeConfirmModal entirely and post directly — the user already tapped
+    // Accept & Confirm, a second modal would be redundant.
+    // Only fall back to codeConfirmModal when any required field is still missing
+    // (so they can fill it in before posting).
     $("captureConfirmBtn")?.addEventListener("click", () => {
       hideCaptureConfirmBar();
       if (State.selectedSetName && State.selectedRarity) {
-        // Resolved card → enable Post button readiness, then open the review modal.
         enableQtyIfReady();
-        const previewCode = State?.selectedPrinting?.set_code || "";
-        // Prefer the canonical opener exposed by confirm.js; fall back to clicking
-        // the existing confirmBtn (which triggers the same modal flow).
-        if (window.UI && typeof window.UI.openCodeConfirmModal === "function") {
-          window.UI.openCodeConfirmModal(previewCode);
+        // Check if all required fields are filled
+        const condVal  = $("conditionSelect")?.value;
+        const qtyVal   = parseInt($("qty")?.value || "0", 10);
+        const allFilled = !!(condVal && qtyVal >= 1);
+
+        if (allFilled) {
+          // All fields complete — post directly, no extra modal needed
+          if (window.UI && typeof window.UI.postCurrentSelection === "function") {
+            window.UI.postCurrentSelection();
+          } else {
+            // Fallback: click the confirm button which routes through the gate
+            $("confirmBtn")?.click();
+          }
         } else {
-          $("confirmBtn")?.click();
+          // Some field still missing — open the review modal so user can fill it
+          const previewCode = State?.selectedPrinting?.set_code || "";
+          if (window.UI && typeof window.UI.openCodeConfirmModal === "function") {
+            window.UI.openCodeConfirmModal(previewCode);
+          } else {
+            $("confirmBtn")?.click();
+          }
         }
       } else {
         // Name path: no printing resolved yet — trigger printings lookup.

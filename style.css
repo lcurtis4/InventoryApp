@@ -1199,3 +1199,23 @@ input.cue-needs-input {
     transition: none !important;
   }
 }
+
+/* --- Fix 1: Inventory total line in success modal (merge case) --- */
+.cc-row--total {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-neutral-200, #e5e7eb);
+}
+.cc-total {
+  font-weight: 700;
+  font-size: 1.05em;
+  color: var(--primary, #0068ff);
+}
+
+/* --- Fix 3: cue-needs-input on <select> elements --- */
+/* Browsers ignore box-shadow on <select> on some platforms; use outline instead */
+select.cue-needs-input {
+  outline: 2px solid #f59e0b !important;
+  outline-offset: 1px !important;
+  background: #fffbeb !important;
+}
