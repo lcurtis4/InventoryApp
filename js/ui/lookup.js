@@ -1,4 +1,10 @@
-// js/ui/lookup.js  — v13.4 (Sprint 2: form-state cleanup)
+// js/ui/lookup.js  — v14.4 (EPIC-93: popup-first name path)
+// v14.4:
+//   • After printings load (both normal and safety-net paths), calls
+//     window.UI.openCodeConfirmModalWithPicker() so Set/Rarity/Condition are
+//     chosen inside the popup — never in the inline form dropdowns.
+//   • Fallback: if confirm.js not yet loaded or printings fail, inline status
+//     message guides user to pick condition and post.
 // v13.4 changes (Sprint 2 — closes #5, #6):
 //   • Issue #6: Set / Rarity dropdown placeholders restored. All three
 //     repopulate paths (populateSetDropdown, initial rarity wipe after
@@ -172,8 +178,22 @@
         rarSel.appendChild(makePlaceholder("please select"));
 
         status($("lookupStatus"), `Found ${candidates.length} match(es).`);
-        status($("confirmPickStatus"), "Select set → rarity → condition, then enter quantity.");
         enableQtyIfReady();
+
+        // Helper: open the picker popup with the card's current sets.
+        // v14.4: all set/rarity/condition selection happens inside the popup;
+        //        the inline dropdowns are still populated for fallback but the
+        //        user is never directed to interact with them directly.
+        function _openPickerForCard() {
+          const cardSets = State.selectedCard?.sets || [];
+          const condVal  = $("conditionSelect")?.value || State.selectedCondition || "";
+          if (typeof window.UI?.openCodeConfirmModalWithPicker === "function") {
+            window.UI.openCodeConfirmModalWithPicker(cardSets, condVal);
+          } else {
+            // Fallback: if confirm.js hasn't loaded yet, prompt inline
+            status($("confirmPickStatus"), "Select set → rarity → condition, then enter quantity.");
+          }
+        }
 
         // v9.2: SAFETY NET — if the picked candidate landed with empty sets
         // (the synthetic local-only path from api.js, or some other gap),
@@ -182,24 +202,28 @@
         const currentSets = Array.isArray(State.selectedCard.sets) ? State.selectedCard.sets : [];
         const needsFill = currentSets.length === 0 || pick.__synthetic === true;
         if (needsFill && typeof window.Lookup?.fillSetsForCandidate === "function") {
-          status($("lookupStatus"), `Found ${candidates.length} match(es). Fetching printings (may scan recent sets if API is slow)…`);
+          status($("lookupStatus"), `Found ${candidates.length} match(es). Fetching printings…`);
           try {
             const ok = await window.Lookup.fillSetsForCandidate(State.selectedCard);
             if (ok && Array.isArray(State.selectedCard.sets) && State.selectedCard.sets.length) {
               populateSetDropdown();
               status($("lookupStatus"), `Found ${candidates.length} match(es). ✓ ${State.selectedCard.sets.length} printing(s) loaded.`);
+              _openPickerForCard();
             } else {
-              // v10.2: name is sufficient — don't demand a set code. Inform the
-              //        user that printings couldn't be fetched but they can
-              //        still post with just the name (and condition/qty).
-              status($("lookupStatus"), `Found ${candidates.length} match(es). ⚠ Couldn't load printings — set code is optional; pick a Condition and Post to Sheet.`, true);
+              // v10.2: name is sufficient — don't demand a set code.
+              status($("lookupStatus"), `Found ${candidates.length} match(es). ⚠ Couldn't load printings — pick a Condition and Post to Sheet.`, true);
+              status($("confirmPickStatus"), "Pick a condition, then enter quantity.");
               enableQtyIfReady();
             }
           } catch (e) {
             // CONSOLE-OFF v12 console.warn('[lookup] sets safety-net threw:', e);
-            status($("lookupStatus"), `Found ${candidates.length} match(es). ⚠ Couldn't load printings — set code is optional; pick a Condition and Post to Sheet.`, true);
+            status($("lookupStatus"), `Found ${candidates.length} match(es). ⚠ Couldn't load printings — pick a Condition and Post to Sheet.`, true);
+            status($("confirmPickStatus"), "Pick a condition, then enter quantity.");
             enableQtyIfReady();
           }
+        } else {
+          // Sets already present — open the picker immediately
+          _openPickerForCard();
         }
       } catch (e) {
         console.error(e);

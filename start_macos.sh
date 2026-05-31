@@ -21,11 +21,11 @@ cd "$SCRIPT_DIR"
 
 # Try Python 3 first, then fall back to node/npx
 if command -v python3 &>/dev/null; then
-    python3 -m http.server "${PORT}"
+    python3 server/dev_server.py "${PORT}"
 elif command -v python &>/dev/null && python -c "import sys; assert sys.version_info[0]==3" 2>/dev/null; then
-    python -m http.server "${PORT}"
+    python server/dev_server.py "${PORT}"
 elif command -v npx &>/dev/null; then
-    npx --yes http-server . -p "${PORT}" --cors -o
+    npx --yes http-server . -p "${PORT}" --cors -c-1 -o
 else
     echo "ERROR: Neither Python 3 nor Node.js (npx) found."
     echo "Install Python 3 from https://python.org or Node.js from https://nodejs.org"

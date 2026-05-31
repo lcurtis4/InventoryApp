@@ -1,4 +1,13 @@
-// js/lookup/api.js  — v10.5
+// js/lookup/api.js  — v10.6
+// v10.6: fetchCandidates local-enrichment now queries CardDb (IndexedDB
+//        snapshot) BEFORE falling back to YGOPRODeck API. Previously a local
+//        NamesStore hit immediately fired ?name= to YGOPRODeck for set data,
+//        defeating the whole point of the local DB. Now:
+//          1. NamesStore.findBest() → local name match (unchanged)
+//          2. CardDb.lookupByName() → local sets/rarities (NEW — no network)
+//          3. Only falls through to YGOPRODeck if CardDb misses (new/missing card)
+//        fetchCardSetsAndRarities already had this priority; now fetchCandidates
+//        (the scan-path entry point) does too.
 // v10.5: fillSetsForCandidate() now RACES all 6 fallback paths in parallel
 //        instead of running them sequentially. v10.4 worked but was slow on
 //        broken-record cards: cardinfo.php?name= would 500 three times in a
@@ -373,12 +382,29 @@
       // CONSOLE-OFF v12 console.warn('[resolve] local short-circuit threw, falling through:', e);
     }
 
-    // If local matched, try to enrich with set/rarity data — but DO NOT throw
-    // away the name if the enrichment call fails (HTTP 500, timeout, etc.).
-    // v9.1: YGOPRODeck currently 500s on `misc=yes&name=...` combinations
-    // ("Database query parameter mismatch"). Drop misc=yes for the enrichment
-    // call — card_sets is included in the default response anyway.
+    // If local matched, enrich with set/rarity data.
+    // PRIORITY: CardDb (local IndexedDB snapshot) FIRST, then YGOPRODeck API.
+    // This keeps the scan path fully offline-capable and avoids live API calls
+    // for every scan when the local DB is loaded.
     if (localHitName) {
+      // ── Step 1: try local CardDb first ──────────────────────────────────────
+      try {
+        if (window.CardDb && typeof window.CardDb.lookupByName === 'function') {
+          if (typeof window.CardDb.ready === 'function') {
+            try { await window.CardDb.ready(); } catch (_) {}
+          }
+          const local = await window.CardDb.lookupByName(localHitName);
+          if (local && Array.isArray(local.sets) && local.sets.length) {
+            const enriched = [{ id: local.id, name: local.name, sets: local.sets }];
+            indexByName(enriched);
+            setCached(exact || fuzzy, enriched);
+            // CONSOLE-OFF v12 console.log('[api] fetchCandidates done via LOCAL DB for', raw, '→', enriched[0].sets.length, 'set(s)');
+            return enriched;
+          }
+        }
+      } catch (_) {}
+
+      // ── Step 2: CardDb miss (new card / stale snapshot) → YGOPRODeck ────────
       try {
         const urlOne = baseUrl + new URLSearchParams({ name: localHitName }).toString();
         const dataOne = await fetchJson(urlOne, { timeoutMs: 3000 });
@@ -387,16 +413,15 @@
           const enriched = listOne.map(c => ({ id: c.id, name: c.name, sets: c.card_sets || [] }));
           indexByName(enriched);
           setCached(exact || fuzzy, enriched);
-          // CONSOLE-OFF v12 console.log('[api] fetchCandidates done via LOCAL+enrich for', raw, '→', enriched.length, 'candidate(s) with', (enriched[0]?.sets || []).length, 'set(s)');
+          // CONSOLE-OFF v12 console.log('[api] fetchCandidates done via LOCAL+API-enrich for', raw, '→', enriched.length, 'candidate(s)');
           return enriched;
         }
-        // CONSOLE-OFF v12 console.log('[resolve] enrich returned empty; serving local-only synthetic (NOT cached)');
+        // CONSOLE-OFF v12 console.log('[resolve] API enrich returned empty; serving synthetic (NOT cached)');
       } catch (e) {
-        // CONSOLE-OFF v12 console.warn('[resolve] enrich call threw; serving local-only synthetic (NOT cached):', e);
+        // CONSOLE-OFF v12 console.warn('[resolve] API enrich threw; serving synthetic (NOT cached):', e);
       }
-      // v9.2: synthetic single-candidate so downstream UI can still resolve
-      // the name. Flagged so caller knows enrichment is missing, and
-      // INTENTIONALLY NOT CACHED — next call retries enrichment.
+      // v9.2: synthetic — name resolved but no sets yet. NOT cached so next
+      // call retries enrichment.
       const synth = [{ id: null, name: localHitName, sets: [], __synthetic: true }];
       // CONSOLE-OFF v12 console.log('[api] fetchCandidates done via LOCAL-ONLY for', raw, '→ 1 candidate (no enrich, no cache)');
       return synth;

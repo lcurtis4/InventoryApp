@@ -1119,3 +1119,129 @@ input:not(.needs-input) {
   font-weight: 500;
   font-size: var(--text-sm);
 }
+
+/* ====================================================================== */
+/* EPIC-93: Unified card-confirmation UX                                   */
+/* ====================================================================== */
+
+/* --- Modal backdrop (EPIC-93: covers #successModal + #cardSelectModal) -- */
+/* The .modal__backdrop sits behind .modal__dialog inside a .modal wrapper. */
+/* It provides the dimmed overlay and enables click-outside-to-close.      */
+.modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.48);
+  cursor: pointer;
+}
+
+/* --- #cardSelectModal: wider dialog to accommodate the candidate list --- */
+.card-select-dialog {
+  width: min(680px, calc(100vw - 32px));
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* --- cc-art--missing placeholder (Story #95) --- */
+/* Shown when we have no card art URL for the success modal card preview. */
+.cc-art--missing {
+  background: var(--color-neutral-200);
+  border-radius: 6px;
+  flex-shrink: 0;
+  width: 140px;
+  height: 204px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cc-art--missing::after {
+  content: "🃏";
+  font-size: 2rem;
+  opacity: 0.4;
+}
+@media (max-width: 640px) {
+  .cc-art--missing { width: 120px; height: 175px; }
+}
+
+/* --- EPIC-93 Story #97: cue visual highlights (AC-004, AC-005) --- */
+/* .cue-needs-input — amber ring on a field still needing attention   */
+/* .cue-ready       — green ring on the confirm button                */
+/* .cue-form-ready  — subtle green tint on the form section           */
+
+.cue-needs-input,
+select.cue-needs-input,
+input.cue-needs-input {
+  border: 2px solid #f59e0b !important;
+  background: #fffbeb !important;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.22) !important;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.cue-ready {
+  box-shadow: 0 0 0 4px rgba(0, 187, 85, 0.30) !important;
+  border-color: var(--primary) !important;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.cue-form-ready {
+  background: rgba(0, 187, 85, 0.04);
+  border-radius: var(--radius-md);
+  transition: background 0.3s;
+}
+
+/* Respect prefers-reduced-motion: no transition animations for cues (AC-006) */
+@media (prefers-reduced-motion: reduce) {
+  .cue-needs-input,
+  select.cue-needs-input,
+  input.cue-needs-input,
+  .cue-ready,
+  .cue-form-ready {
+    transition: none !important;
+  }
+}
+
+/* --- Fix 1: Inventory total line in success modal (merge case) --- */
+.cc-row--total {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-neutral-200, #e5e7eb);
+}
+.cc-total {
+  font-weight: 700;
+  font-size: 1.05em;
+  color: var(--primary, #0068ff);
+}
+
+/* --- codeConfirmModal inline picker rows (name-path: set/rarity/condition selects) --- */
+.cc-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cc-picker-select {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--color-neutral-300, #d1d5db);
+  border-radius: var(--radius-sm, 4px);
+  font-size: 0.9em;
+  background: var(--surface, #fff);
+  color: var(--color-neutral-900, #111);
+  cursor: pointer;
+}
+.cc-picker-select:focus {
+  outline: 2px solid var(--primary, #0068ff);
+  outline-offset: 1px;
+}
+.cc-picker-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* --- Fix 3: cue-needs-input on <select> elements --- */
+/* Browsers ignore box-shadow on <select> on some platforms; use outline instead */
+select.cue-needs-input {
+  outline: 2px solid #f59e0b !important;
+  outline-offset: 1px !important;
+  background: #fffbeb !important;
+}

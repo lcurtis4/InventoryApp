@@ -1,4 +1,12 @@
-// js/ui/scan.js  — v10.1
+// js/ui/scan.js  — v14.4 (EPIC-93: cross-tick accumulator + popup-first name path)
+// v14.4:
+//   • Cross-tick candidate accumulator: across ACCUM_WINDOW_TICKS (3) scan ticks,
+//     if 2+ distinct card IDs appear at score ≥ MULTI_PICK_SCORE, show the
+//     card-select modal. Fixes the UAT issue where a card like "Kewl Tune Rotary"
+//     scanned for 40+ seconds without triggering the picker because each tick
+//     returned a different single candidate at low confidence.
+//   • captureConfirmBtn name-path: lookupBtn.click() now routes to
+//     openCodeConfirmModalWithPicker via lookup.js v14.4 — never inline form.
 // v10.1 changes:
 //   • Listens for `inventory:form:reset` (dispatched by confirm.js after a
 //     successful Post to Sheet). On reset we now:
@@ -39,6 +47,35 @@
   const enableQtyIfReady    = window.UI.enableQtyIfReady     || function(){};
 
   const MIN_ACC = typeof State.MIN_ACCURACY === "number" ? State.MIN_ACCURACY : 80;
+
+  // v14.3: Minimum score for a candidate to count toward the ambiguity check.
+  // When 2+ candidates each reach this threshold, we show the picker instead of
+  // auto-applying the top hit, even if only one candidate exists in the result
+  // array. Matches the new core.js ACCEPTABLE_SCORE floor.
+  const MULTI_PICK_SCORE = 0.40;
+
+  // v14.4: Cross-tick candidate accumulator.
+  // Each scan tick gives us 1 best-match candidate from a slightly different OCR
+  // read of the same card name. By itself a single tick only produces 1 candidate,
+  // so the ambiguity check (aboveThreshold.length >= 2) never fires — even though
+  // the scanner is clearly seeing multiple plausible cards across successive reads.
+  //
+  // Strategy: keep a rolling window of the last ACCUM_WINDOW_TICKS top candidates.
+  // If 2+ *distinct card IDs* appear at score >= MULTI_PICK_SCORE within that
+  // window, merge them into a deduped picker list and show the modal.
+  //
+  // We reset the accumulator whenever:
+  //   (a) an exactMatch is found (code match → auto-apply immediately), or
+  //   (b) a single card has won every tick in the window (unambiguous winner), or
+  //   (c) the scanner is resumed / form is reset (clearFormAndState called).
+  const ACCUM_WINDOW_TICKS = 3; // trigger after 3 ticks if still ambiguous
+  let _accumCandidates = []; // [{id, name, score, imageUrl, ...}, ...] across ticks
+  let _accumText       = ""; // OCR text of first tick in current window
+
+  function _resetAccumulator() {
+    _accumCandidates = [];
+    _accumText       = "";
+  }
 
   // Restore a <select> to a single canonical "please select" placeholder.
   // Shared shape with confirm.js resetSelect + lookup.js makePlaceholder so the
@@ -104,20 +141,20 @@
   window.UI.setMatchSource = setMatchSource;
 
   // ── .needs-input highlight helpers (v8.2) ────────────────────────────────────
-  // Adds amber border to fields still needing input after a code-confirmed match.
-  // Required: set, rarity, condition, qty.
-  // Fields prefilled by code should NOT be highlighted.
+  // v14.2: applyNeedsInput now passes opts through without forcing any field
+  // to false. The old hardcoded suppression of set/condition was left over from
+  // a time when those fields were always pre-filled by the code-match path.
+  // The canonical highlight path is now confirm.js highlightMissingFields()
+  // (cue-needs-input amber ring). applyNeedsInput is kept for backward compat
+  // with the legacy .needs-input CSS class but no longer overrides caller intent.
   function applyNeedsInput(opts) {
     // opts: { set: bool, rarity: bool, condition: bool, qty: bool }
-    // v16 (#5): Condition must NEVER receive .needs-input — its default value is
-    // acceptable on its own and does not require a manual pick. We force the
-    // conditionSelect entry to `false` here so no caller (current or future)
-    // can re-introduce the stray highlight, and we proactively strip any
-    // pre-existing highlight on it as a belt-and-suspenders guard.
-    // #85 (EPIC-87, AC-001): Set dropdown is now treated the same way —
-    //   setSelect is forced to `false` so it can never receive the amber
-    //   highlight from any caller.
-    const ids = { setSelect: false, raritySelect: opts.rarity, conditionSelect: false, qty: opts.qty };
+    const ids = {
+      setSelect:       !!opts.set,
+      raritySelect:    !!opts.rarity,
+      conditionSelect: !!opts.condition,
+      qty:             !!opts.qty,
+    };
     for (const [id, needs] of Object.entries(ids)) {
       const el = $(id);
       if (!el) continue;
@@ -428,6 +465,118 @@
     picker.style.display = "";
   }
 
+  // ── EPIC-93 Story #96: Card Select Modal (AC-002 / AC-003) ───────────────────
+  // Routes multi-candidate selection through #cardSelectModal (a centered popup)
+  // instead of the inline #candidatesPicker in the form. Candidate tiles and the
+  // single Confirm button are rendered inside the modal body; Rescan cancels.
+  function openCardSelectModal(candidates, scannedCode, onPick, onRescan) {
+    const modal = $("cardSelectModal");
+    const body  = $("cardSelectModalBody");
+    if (!modal || !body) {
+      // Fallback: legacy inline picker if modal element not present
+      showCandidatesPicker(candidates, scannedCode, onPick, onRescan);
+      return;
+    }
+
+    // Update title to include code if available
+    const titleEl = $("cardSelectModalTitle");
+    if (titleEl) titleEl.textContent = scannedCode ? `Code "${scannedCode}" — choose printing` : "Choose matching card";
+
+    body.innerHTML = "";
+
+    // Re-use the existing makeCandCard builder for visual parity
+    let confirmBtn  = null;
+    let selectedCand = null;
+    let selectedEl   = null;
+
+    const hasVis = candidates.some(c => typeof c.imgScore === "number");
+    if (hasVis) {
+      const visNote = document.createElement("div");
+      visNote.className = "cand-vis-note";
+      visNote.textContent = "Visual similarity scored against card art (browser-only, 32×32 crop).";
+      body.appendChild(visNote);
+    }
+
+    const list = document.createElement("div");
+    list.className = "cand-list";
+    candidates.forEach(c => list.appendChild(makeCandCard(c, scannedCode, (picked, cardEl) => {
+      selectedCand = picked;
+      if (selectedEl) {
+        selectedEl.classList.remove("cand-card--selected");
+        selectedEl.setAttribute("aria-pressed", "false");
+      }
+      selectedEl = cardEl;
+      cardEl.classList.add("cand-card--selected");
+      cardEl.setAttribute("aria-pressed", "true");
+      if (confirmBtn) confirmBtn.disabled = false;
+    })));
+    body.appendChild(list);
+
+    const footer = document.createElement("div");
+    footer.className = "cand-footer";
+
+    confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.className = "primary cand-confirm";
+    confirmBtn.textContent = "Confirm";
+    confirmBtn.disabled = true;
+    confirmBtn.addEventListener("click", () => {
+      if (!selectedCand) return;
+      _closeCardSelectModal();
+      onPick && onPick(selectedCand);
+    });
+    footer.appendChild(confirmBtn);
+
+    const rescanBtn = document.createElement("button");
+    rescanBtn.type = "button";
+    rescanBtn.className = "secondary cand-rescan";
+    rescanBtn.textContent = "Rescan";
+    rescanBtn.addEventListener("click", () => {
+      _closeCardSelectModal();
+      hideCaptureConfirmBar();
+      onRescan && onRescan();
+    });
+    footer.appendChild(rescanBtn);
+    body.appendChild(footer);
+
+    // Wire close-X button (AC-007)
+    const closeX = $("cardSelectCloseX");
+    if (closeX) {
+      closeX.onclick = () => { _closeCardSelectModal(); onRescan && onRescan(); };
+    }
+
+    // Backdrop click closes (AC-007)
+    modal.querySelector(".modal__backdrop")?.addEventListener("click", (e) => {
+      if (e.target === e.currentTarget) { _closeCardSelectModal(); onRescan && onRescan(); }
+    }, { once: true });
+
+    // Esc to close (AC-007)
+    const escHandler = (e) => {
+      if (e.key === "Escape" && modal.classList.contains("is-open")) {
+        _closeCardSelectModal();
+        onRescan && onRescan();
+        document.removeEventListener("keydown", escHandler);
+      }
+    };
+    document.addEventListener("keydown", escHandler);
+
+    // Open the modal
+    modal.classList.add("is-open");
+    modal.setAttribute("aria-hidden", "false");
+    const dialog = modal.querySelector(".modal__dialog");
+    if (dialog) { dialog.setAttribute("tabindex", "-1"); dialog.focus(); }
+    document.documentElement.style.overflow = "hidden";
+  }
+
+  function _closeCardSelectModal() {
+    const modal = $("cardSelectModal");
+    if (!modal) return;
+    if (window.UI?.moveFocusOutOf) window.UI.moveFocusOutOf(modal);
+    modal.classList.remove("is-open");
+    modal.setAttribute("aria-hidden", "true");
+    document.documentElement.style.overflow = "";
+  }
+
   // ── Apply a code-resolved candidate directly to the form ──────────────────────
   function applyCodeCandidate(cand, scannedCode) {
     const name = cand.name || "";
@@ -475,19 +624,40 @@
     status($("ocrStatus"), `Code match: ${cand.set_code || scannedCode} → ${name}`);
     $("ocrConf").textContent = `code: exact`;
 
-    // v8.2: highlight fields still needing input (set/rarity already filled by code)
-    // v16 (#5): Condition is intentionally NOT highlighted — its default is
-    // acceptable and does not require a manual pick. applyNeedsInput() also
-    // hard-forces condition:false, so this is belt-and-suspenders.
-    const qtyVal     = parseInt($("qty")?.value || "0", 10);
-    applyNeedsInput({
-      set:       false,          // prefilled by code
-      rarity:    false,          // prefilled by code
-      condition: false,          // #5: never highlight Condition
-      qty:       !(qtyVal >= 1),
-    });
-
     enableQtyIfReady();
+
+    // v14.3: After applying a code candidate, check which required fields are
+    // actually missing in the live DOM and highlight ALL of them, not just
+    // Condition. Previously this block hard-coded only conditionSelect, which
+    // meant Set/Rarity went unhighlighted when the candidate had no set_name
+    // or set_rarity (name-only OCR path with a code prefix that resolved to
+    // a card but no printing data). Now we collect every missing field and
+    // delegate to window.UI.highlightMissingFields (confirm.js shared helper)
+    // so the visual behaviour is identical everywhere.
+    try {
+      const setVal    = $("setSelect")?.value    || "";
+      const rarVal    = $("raritySelect")?.value || "";
+      const condVal   = $("conditionSelect")?.value || "";
+      const qtyFinal  = parseInt($("qty")?.value || "0", 10);
+
+      if (setVal && rarVal && condVal && qtyFinal >= 1) {
+        // All fields populated — fire the green ready cue
+        window.UI?.cue?.fireReady?.();
+      } else {
+        // Build missing list and highlight every unfilled field with amber ring
+        const missing = [];
+        if (!setVal)       missing.push("set");
+        if (!rarVal)       missing.push("rarity");
+        if (!condVal)      missing.push("condition");
+        if (qtyFinal < 1)  missing.push("qty");
+        if (window.UI && typeof window.UI.highlightMissingFields === "function") {
+          window.UI.highlightMissingFields(missing);
+        } else {
+          // Fallback: at minimum fire the tone on conditionSelect (legacy behaviour)
+          if (!condVal) window.UI?.cue?.fireNeedsInput?.($("conditionSelect"));
+        }
+      }
+    } catch (_) {}
   }
 
   // ── Apply a name-path candidate ────────────────────────────────────────────────
@@ -505,12 +675,16 @@
 
   // ── Clear form ─────────────────────────────────────────────────────────────────
   function clearFormAndState() {
+    _resetAccumulator();
     const ocr = $("ocrName");    if (ocr) ocr.value = "";
     const man = $("manualName"); if (man) man.value = "";
     const mc  = $("manualCode"); if (mc)  mc.value  = "";
 
+    // EPIC-93: clear any active cue highlights on form reset
+    try { window.UI?.cue?.clearCues?.(); } catch (_) {}
     hideCaptureConfirmBar();
     hideCandidatesPicker();
+    _closeCardSelectModal();
     clearNeedsInput();
     setMatchSource("");
 
@@ -539,6 +713,7 @@
 
   // ── Rescan ─────────────────────────────────────────────────────────────────────
   function doRescan() {
+    _resetAccumulator();
     $("ocrName").value = "";
     status($("ocrStatus"), "");
     $("ocrConf").textContent = "accuracy: —";
@@ -599,7 +774,8 @@
       } else {
         status($("lookupStatus"), `${candidates.length} printings found for ${code}.`);
         setAutoStatus("Multiple printings — choose one below.");
-        showCandidatesPicker(candidates, code, (picked) => {
+        // EPIC-93 Story #96 (AC-002/AC-003): use centered card-select modal popup
+        openCardSelectModal(candidates, code, (picked) => {
           applyCodeCandidate(picked, code);
           setMatchSource("manual-code", picked.set_code || code);
           showCaptureConfirmBar(picked, picked.set_code || code);
@@ -669,46 +845,119 @@
       setMatchSource("name-fallback", scannedText || "");
     }
 
-    // UAT fix (issue: "confirm the card twice"): the multi-option picker is
-    //   ONLY for disambiguating multiple printings. With a single candidate we
-    //   must route straight to the capture-confirm bar regardless of OCR
-    //   confidence — otherwise a low-confidence single match (e.g. an 84% name
-    //   fallback) showed the picker (pick tile + Confirm) AND THEN the
-    //   capture-confirm bar, forcing the user to confirm the same card twice.
-    //   Confidence only affects the status copy now, not the branch.
-    if (candidates.length === 1) {
+    // v14.3/v14.4: Ambiguity check — two-layer strategy:
+    //
+    // Layer 1 (single tick): if this tick's result already contains 2+ candidates
+    //   each ≥ MULTI_PICK_SCORE AND the top hit is not an exact code match, we can
+    //   show the picker immediately (happens when OCR is clear + DB returns close
+    //   matches with similar scores).
+    //
+    // Layer 2 (cross-tick accumulator): each name-mode scan tick often yields only
+    //   1 candidate above threshold from a slightly-mangled OCR read. We accumulate
+    //   top candidates across ACCUM_WINDOW_TICKS ticks; if 2+ *distinct card IDs*
+    //   appear, the scanner is genuinely ambiguous and we show the picker.
+    //
+    // Reset accumulator on exact-code match (no ambiguity possible) or when the
+    //   form is reset (clearFormAndState already calls _resetAccumulator via the
+    //   inventory:form:reset listener below).
+
+    const aboveThreshold = candidates.filter(c => (c.blendedScore || c.score || 0) >= MULTI_PICK_SCORE);
+
+    // Exact match — always auto-apply, no accumulation needed
+    if (best.exactMatch) {
+      _resetAccumulator();
       applyCodeCandidate(best, primaryCode);
       const label = best.set_code ? `${best.set_code} · ${best.set_rarity || "?"}` : (best.set_rarity || "");
-      const confident = best.exactMatch || (best.score || 0) >= 0.90;
-      setAutoStatus(confident
-        ? `Found: ${best.name}. Choose condition + qty, then confirm.`
-        : `Best match: ${best.name}. Choose condition + qty and confirm, or Rescan if wrong.`);
+      setAutoStatus(`Found: ${best.name}. Choose condition + qty, then confirm.`);
       showCaptureConfirmBar(best, label || null);
       return;
     }
 
-    // #90 (EPIC-87, AC-010..013): revert #55's silent auto-pick. When a lookup
-    //   returns multiple printings, show the multi-option picker so the user
-    //   selects the correct Set/Rarity printing. Selecting a tile + the single
-    //   in-picker Confirm commits the choice (no codeConfirmModal double-step),
-    //   then routes into the existing capture-confirm bar where Condition + Qty
-    //   stay (unchanged). Single-match branch above is untouched.
-    setAutoStatus(`Multiple printings for ${best.name} — choose one below.`);
-    showCandidatesPicker(
-      candidates,
-      primaryCode || "",
-      (picked) => {
-        applyCodeCandidate(picked, primaryCode || picked.set_code || "");
-        if (scanMode === "code") setMatchSource("exact-code", picked.set_code || primaryCode);
-        else setMatchSource("name-fallback", scannedText || "");
-        const lbl = picked.set_code
-          ? `${picked.set_code} · ${picked.set_rarity || ""}`.trim()
-          : (picked.set_rarity || "");
-        setAutoStatus(`Selected: ${picked.name}. Choose condition + qty, then confirm.`);
-        showCaptureConfirmBar(picked, lbl || null);
-      },
-      doRescan
-    );
+    // Layer 1: immediate multi-candidate check (this tick alone)
+    const isAmbiguousNow = aboveThreshold.length >= 2;
+
+    if (isAmbiguousNow) {
+      _resetAccumulator();
+      const pickerMsg = `${aboveThreshold.length} possible matches — which card is this?`;
+      setAutoStatus(pickerMsg);
+      openCardSelectModal(
+        candidates,
+        primaryCode || "",
+        (picked) => {
+          _resetAccumulator();
+          applyCodeCandidate(picked, primaryCode || picked.set_code || "");
+          if (scanMode === "code") setMatchSource("exact-code", picked.set_code || primaryCode);
+          else setMatchSource("name-fallback", scannedText || "");
+          const lbl = picked.set_code
+            ? `${picked.set_code} · ${picked.set_rarity || ""}`.trim()
+            : (picked.set_rarity || "");
+          setAutoStatus(`Selected: ${picked.name}. Choose condition + qty, then confirm.`);
+          showCaptureConfirmBar(picked, lbl || null);
+        },
+        doRescan
+      );
+      return;
+    }
+
+    // Layer 2: cross-tick accumulation for name-mode ambiguity
+    // Only accumulate when scanMode is "name" (code mode with 1 candidate is fine to auto-apply)
+    if (scanMode === "name") {
+      // Seed the window text on first tick
+      if (!_accumText) _accumText = scannedText || "";
+
+      // Merge top candidate(s) from this tick into the accumulator
+      aboveThreshold.forEach(c => {
+        if (!_accumCandidates.some(a => a.id === c.id)) {
+          _accumCandidates.push(c);
+        } else {
+          // Update score to highest seen so far
+          const existing = _accumCandidates.find(a => a.id === c.id);
+          if (existing && (c.blendedScore || c.score || 0) > (existing.blendedScore || existing.score || 0)) {
+            Object.assign(existing, c);
+          }
+        }
+      });
+
+      // Check if we've accumulated enough ticks (guard: _accumCandidates grows only when IDs differ)
+      const distinctIds = new Set(_accumCandidates.map(c => c.id)).size;
+      const tickCount   = _accumCandidates.length;
+
+      if (distinctIds >= 2 && tickCount >= ACCUM_WINDOW_TICKS) {
+        // Ambiguity confirmed across multiple ticks — show the picker
+        const accumulated = [..._accumCandidates].sort((a, b) =>
+          (b.blendedScore || b.score || 0) - (a.blendedScore || a.score || 0)
+        );
+        _resetAccumulator();
+        setAutoStatus(`${accumulated.length} possible matches — which card is this?`);
+        openCardSelectModal(
+          accumulated,
+          primaryCode || "",
+          (picked) => {
+            _resetAccumulator();
+            applyCodeCandidate(picked, primaryCode || picked.set_code || "");
+            setMatchSource("name-fallback", _accumText || scannedText || "");
+            const lbl = picked.set_code
+              ? `${picked.set_code} · ${picked.set_rarity || ""}`.trim()
+              : (picked.set_rarity || "");
+            setAutoStatus(`Selected: ${picked.name}. Choose condition + qty, then confirm.`);
+            showCaptureConfirmBar(picked, lbl || null);
+          },
+          doRescan
+        );
+        return;
+      }
+    }
+
+    // Single clear winner (or accumulation not yet triggered) — auto-apply.
+    // If distinctIds === 1 across multiple ticks, the scanner is confident in this card.
+    _resetAccumulator();
+    applyCodeCandidate(best, primaryCode);
+    const label = best.set_code ? `${best.set_code} · ${best.set_rarity || "?"}` : (best.set_rarity || "");
+    const confident = (best.score || 0) >= 0.90;
+    setAutoStatus(confident
+      ? `Found: ${best.name}. Choose condition + qty, then confirm.`
+      : `Best match: ${best.name}. Choose condition + qty and confirm, or Rescan if wrong.`);
+    showCaptureConfirmBar(best, label || null);
   }
 
   // ── Bind UI actions ────────────────────────────────────────────────────────────
@@ -772,28 +1021,76 @@
       }
     });
 
-    // Accept & Confirm bar — v13.1: behave the same as the code-path confirm flow.
-    // If we already have a resolved printing (set + rarity present), open the
-    // codeConfirmModal review card (identical UX to the code path). Otherwise,
-    // fall back to the legacy name-path lookup trigger.
+    // Accept & Confirm bar (v14.2: no double-confirm, no codeConfirmModal bypass)
+    //
+    // Flow:
+    //   1. If printing is resolved (set+rarity in State from code/picker): read live
+    //      DOM values, check all required fields. If all filled → post directly.
+    //      If any field is missing → fire amber highlights on ALL missing fields
+    //      and show inline error. codeConfirmModal is NEVER opened from this path.
+    //   2. If printing not resolved yet (name-only path): trigger printings lookup.
+    //
+    // Why codeConfirmModal was removed from the incomplete-form path:
+    //   The modal's Confirm button called postCurrentSelection() which called
+    //   buildRowFromUI() which used State.selectedSetName/Rarity (stale) instead
+    //   of the live DOM value, so it posted even when the dropdown showed
+    //   "please select". Removing the modal eliminates that bypass entirely.
     $("captureConfirmBtn")?.addEventListener("click", () => {
       hideCaptureConfirmBar();
       if (State.selectedSetName && State.selectedRarity) {
-        // Resolved card → enable Post button readiness, then open the review modal.
         enableQtyIfReady();
-        const previewCode = State?.selectedPrinting?.set_code || "";
-        // Prefer the canonical opener exposed by confirm.js; fall back to clicking
-        // the existing confirmBtn (which triggers the same modal flow).
-        if (window.UI && typeof window.UI.openCodeConfirmModal === "function") {
-          window.UI.openCodeConfirmModal(previewCode);
+        // Read required fields from the live DOM — never from State (State is stale).
+        const condVal   = $("conditionSelect")?.value || "";
+        const qtyVal    = parseInt($("qty")?.value || "0", 10);
+        const setVal    = $("setSelect")?.value    || "";
+        const rarityVal = $("raritySelect")?.value || "";
+        const allFilled = !!(condVal && qtyVal >= 1 && setVal && rarityVal);
+
+        if (allFilled) {
+          // All fields complete — post directly, no modal (Fix 2)
+          if (window.UI && typeof window.UI.postCurrentSelection === "function") {
+            window.UI.postCurrentSelection();
+          } else {
+            $("confirmBtn")?.click();
+          }
         } else {
-          $("confirmBtn")?.click();
+          // One or more fields missing — fire amber highlights on ALL of them
+          // and surface a status error. Do NOT open codeConfirmModal (it bypassed
+          // the gate by reading stale State instead of the live DOM).
+          const missing = [];
+          if (!setVal)      missing.push("set");
+          if (!rarityVal)   missing.push("rarity");
+          if (!condVal)     missing.push("condition");
+          if (qtyVal < 1)   missing.push("qty");
+          // Delegate highlighting to confirm.js shared helper (one system, Fix 3)
+          if (window.UI && typeof window.UI.highlightMissingFields === "function") {
+            window.UI.highlightMissingFields(missing);
+          }
+          // Surface first missing field as an error in the status bar
+          const firstLabel = { set: "Set", rarity: "Rarity", condition: "Condition", qty: "Qty" };
+          const firstMissing = missing[0];
+          const errMsg = firstMissing
+            ? `Please select a ${firstLabel[firstMissing] || firstMissing} before posting.`
+            : "Please fill out all required fields.";
+          const confirmStatus = $("confirmPickStatus") || $("confirmStatus");
+          if (confirmStatus) {
+            confirmStatus.textContent = errMsg;
+            confirmStatus.className = "status error";
+          }
         }
       } else {
-        // Name path: no printing resolved yet — trigger printings lookup.
+        // Name path: no printing resolved yet — fetch printings and open the
+        // picker popup directly. NEVER call lookupBtn.click() here because that
+        // populates the inline form dropdowns and leaves the user without a popup.
+        // v14.4: all set/rarity/condition selection goes through the popup.
         const confText = $("ocrConf")?.textContent || "";
         const acc = parseInt(confText.replace(/[^0-9]/g, ""), 10) || 0;
         if (acc >= MIN_ACC || acc >= 65 || confText.includes("exact")) {
+          // Trigger the lookup flow, which will call openCodeConfirmModalWithPicker
+          // at the end via lookup.js's _openPickerForCard() helper.
+          // We route through the existing lookupBtn machinery so all the state
+          // setup (State.selectedCard, populateSetDropdown, safety-net) runs
+          // exactly once. lookup.js v14.4 will open the popup when ready.
           $("lookupBtn")?.click();
         } else {
           status($("ocrStatus"), `Name accepted. Click "Find Printings" to continue.`);
@@ -849,8 +1146,10 @@
 
   window.UI.scan = window.UI.scan || {};
   window.UI.scan.bind = bind;
-  // #90 (EPIC-87): expose the multi-option picker for direct use/testing.
+  // Legacy inline picker (kept for backward compat; use openCardSelectModal for new flows)
   window.UI.scan.showCandidatesPicker = showCandidatesPicker;
+  // EPIC-93 Story #96: centered modal picker
+  window.UI.scan.openCardSelectModal = openCardSelectModal;
   // UAT: expose the scan-result router for direct use/testing.
   window.UI.scan.handleScanResult = handleScanResult;
 })();
