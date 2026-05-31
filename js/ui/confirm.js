@@ -335,12 +335,13 @@
 
     if (!row.name) missing.push("name");
 
-    // Set and Rarity are required whenever the card was looked up via the
-    // database path (State.selectedPrinting populated). For manual-name-only
-    // entries they remain optional (same leniency as before).
-    const hasResolvedPrinting = !!(State?.selectedPrinting || State?.selectedSetName);
-    if (hasResolvedPrinting && !row.set)    missing.push("set");
-    if (hasResolvedPrinting && !row.rarity) missing.push("rarity");
+    // Set and Rarity are required when their dropdowns have been populated
+    // (options.length > 1 = placeholder + at least one real option).
+    // This matches the same logic in state.js enableQtyIfReady.
+    const setPopulated    = setSel    && setSel.options.length    > 1;
+    const rarityPopulated = raritySel && raritySel.options.length > 1;
+    if (setPopulated    && !row.set)       missing.push("set");
+    if (rarityPopulated && !row.rarity)    missing.push("rarity");
 
     if (!row.condition) missing.push("condition");
     if (!row.qty || row.qty < 1) missing.push("qty");
@@ -351,13 +352,11 @@
     try {
       const cue = window.UI?.cue;
       if (cue) {
-        // fireNeedsInput only takes one element, so call it on the most
-        // important missing field first; then add the amber ring class
-        // manually to the others (clearCues will remove them all at once).
         const fieldMap = { set: setSel, rarity: raritySel, condition: conditionSel, qty: qtyEl };
         const missingEls = missing.map(k => fieldMap[k]).filter(Boolean);
-        // Primary cue fires tone + ring on first el, then we add rings to the rest
+        // Primary cue fires tone + amber ring on first el
         if (missingEls[0]) cue.fireNeedsInput(missingEls[0]);
+        // Add amber ring to ALL other missing fields too
         missingEls.slice(1).forEach(el => el.classList.add("cue-needs-input"));
       }
     } catch (_) {}

@@ -62,10 +62,10 @@
   }
 
   function enableQtyIfReady(){
-    // v10.2: relaxed gate — name + condition + qty is enough to post. Set/
-    //        Rarity/Code are recommended but no longer required. Bug A on
-    //        the user's network means YGOPRODeck sometimes can't return
-    //        printings for a confirmed name; we should not block the save.
+    // Fix 4 (v14.1): Post button now requires name + set + rarity + condition + qty.
+    // Set and Rarity are only required when their dropdowns have been populated
+    // (options.length > 1 means the placeholder + at least one real option).
+    // This prevents posting a card with only Condition filled.
     const qty = $("qty");
     const btn = $("confirmBtn");
     if(!qty || !btn) return;
@@ -74,7 +74,16 @@
     const scannedName = ($("ocrName")?.value    || "").trim();
     const haveName    = !!(manualName || scannedName);
     const haveCondition = !!State.selectedCondition;
-    const minReady = haveName && haveCondition;
+
+    // Require Set / Rarity only when their dropdowns have been populated
+    const setSel    = $("setSelect");
+    const rarSel    = $("raritySelect");
+    const setPopulated    = setSel  && setSel.options.length  > 1;
+    const rarityPopulated = rarSel  && rarSel.options.length  > 1;
+    const haveSet    = !setPopulated    || !!(State.selectedSetName);
+    const haveRarity = !rarityPopulated || !!(State.selectedRarity);
+
+    const minReady = haveName && haveCondition && haveSet && haveRarity;
 
     qty.disabled = !minReady;
     const qtyVal = parseInt(qty.value || "0", 10);

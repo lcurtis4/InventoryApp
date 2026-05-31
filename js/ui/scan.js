@@ -909,21 +909,23 @@
       hideCaptureConfirmBar();
       if (State.selectedSetName && State.selectedRarity) {
         enableQtyIfReady();
-        // Check if all required fields are filled
-        const condVal  = $("conditionSelect")?.value;
-        const qtyVal   = parseInt($("qty")?.value || "0", 10);
-        const allFilled = !!(condVal && qtyVal >= 1);
+        // All required fields must be filled before we skip the review modal.
+        // Check condition, qty, AND that set/rarity are actually selected.
+        const condVal   = $("conditionSelect")?.value;
+        const qtyVal    = parseInt($("qty")?.value || "0", 10);
+        const setVal    = $("setSelect")?.value;
+        const rarityVal = $("raritySelect")?.value;
+        const allFilled = !!(condVal && qtyVal >= 1 && setVal && rarityVal);
 
         if (allFilled) {
-          // All fields complete — post directly, no extra modal needed
+          // All fields complete — post directly, no extra modal needed (Fix 2)
           if (window.UI && typeof window.UI.postCurrentSelection === "function") {
             window.UI.postCurrentSelection();
           } else {
-            // Fallback: click the confirm button which routes through the gate
             $("confirmBtn")?.click();
           }
         } else {
-          // Some field still missing — open the review modal so user can fill it
+          // A field is still missing — open the review modal so user can fill it
           const previewCode = State?.selectedPrinting?.set_code || "";
           if (window.UI && typeof window.UI.openCodeConfirmModal === "function") {
             window.UI.openCodeConfirmModal(previewCode);
